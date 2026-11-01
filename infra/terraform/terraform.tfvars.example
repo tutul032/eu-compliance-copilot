@@ -1,0 +1,3 @@
+# Copy to terraform.tfvars (gitignored). No tokens or secrets here: auth comes from the
+# environment (DATABRICKS_CONFIG_PROFILE=free).
+databricks_host = "https://dbc-405898bc-c90e.cloud.databricks.com"

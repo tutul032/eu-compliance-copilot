@@ -1,0 +1,13 @@
+{
+  "id": "databricks-cli",
+  "version": "1.0.0",
+  "name": "Databricks CLI (pinned)",
+  "description": "Installs a pinned Databricks CLI with the official databricks/setup-cli install script.",
+  "options": {
+    "version": {
+      "type": "string",
+      "default": "1.23.0",
+      "description": "Databricks CLI version (a databricks/setup-cli tag without the v; never latest)."
+    }
+  }
+}

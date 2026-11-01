@@ -1,0 +1,44 @@
+# Databricks Asset Bundle for eu-compliance-copilot.
+# Workspace host is set here (all targets); no `profile` so service-principal env-var auth
+# (CI, later) works. Locally, pass `-p free` on the command line.
+#
+# One Free Edition workspace hosts all targets; each target uses its own schema in the
+# `workspace` catalog. The schemas are created by infra/terraform/, never by the bundle.
+# No resources yet.
+bundle:
+  name: eu-compliance-copilot
+
+workspace:
+  host: https://dbc-405898bc-c90e.cloud.databricks.com
+
+variables:
+  catalog:
+    description: Unity Catalog catalog for all tables.
+    default: workspace
+  schema:
+    description: Schema for this target (set per target).
+
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      schema: compliance_dev
+
+  staging:
+    mode: production
+    # One shared workspace: prefix names so staging/prod resources don't collide (409 "already
+    # used"). In a multi-workspace setup (one workspace per target) the prefix would not be needed.
+    presets:
+      name_prefix: "[staging] "
+    variables:
+      schema: compliance_staging
+
+  prod:
+    mode: production
+    # One shared workspace: prefix names so staging/prod resources don't collide (409 "already
+    # used"). In a multi-workspace setup (one workspace per target) the prefix would not be needed.
+    presets:
+      name_prefix: "[prod] "
+    variables:
+      schema: compliance_prod

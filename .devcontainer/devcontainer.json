@@ -1,0 +1,57 @@
+{
+  "name": "energy-lakehouse-de",
+  // Base image (FROM) in .devcontainer/Dockerfile; Python minor = .python-version / CI (3.12).
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // Host Docker via the socket, so `docker build .` works inside (no Docker daemon in here).
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    // Official install script (databricks/setup-cli) at a pinned tag; same version as CI.
+    "./features/databricks-cli": {
+      "version": "1.23.0"
+    },
+    // Terraform (terraform/) and tflint; same versions as the ci.yml `terraform` job.
+    "ghcr.io/devcontainers/features/terraform:1": {
+      "version": "1.16.6",
+      "tflint": "0.64.0"
+    }
+  },
+  "remoteUser": "vscode",
+  // The Linux venv lives outside the bind-mounted workspace, so it never clobbers a host .venv.
+  "containerEnv": {
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.venvs/energy-lakehouse-de",
+    "UV_LINK_MODE": "copy"
+  },
+  "remoteEnv": {
+    "PATH": "/home/vscode/.venvs/energy-lakehouse-de/bin:${containerEnv:PATH}"
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  // Callback port of `databricks auth login` (OAuth U2M): the host browser redirects here.
+  "forwardPorts": [8020],
+  "portsAttributes": {
+    "8020": {
+      "label": "databricks auth login callback",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "databricks.databricks",
+        "redhat.vscode-yaml",
+        "github.vscode-github-actions"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/home/vscode/.venvs/energy-lakehouse-de/bin/python",
+        "python.testing.pytestEnabled": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      }
+    }
+  }
+}
