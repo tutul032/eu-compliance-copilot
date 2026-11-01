@@ -218,3 +218,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Terraform (infra/terraform/): local state, plans and provider cache never go into git.
+# .terraform.lock.hcl stays committed (provider hash pins).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
+
+# Databricks CLI / bundle local state
+.databricks/

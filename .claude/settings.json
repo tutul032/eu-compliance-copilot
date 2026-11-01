@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(terraform apply:*)",
+      "Bash(terraform destroy:*)",
+      "Bash(terraform state:*)",
+      "Bash(terraform import:*)"
+    ]
+  }
+}
