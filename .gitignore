@@ -229,3 +229,17 @@ terraform.tfvars
 
 # Databricks CLI / bundle local state
 .databricks/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
