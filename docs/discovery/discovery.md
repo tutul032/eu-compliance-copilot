@@ -41,7 +41,7 @@ Compliance analysts, DPOs and ML engineers at mid-size EU companies in **energy 
 
 | Item | Terms | Consequence |
 | --- | --- | --- |
-| EUR-Lex texts (GDPR, AI Act, DORA, Omnibus) | Commission reuse policy, Decision 2011/833/EU: commercial and non-commercial reuse allowed, acknowledge source, don't distort meaning, no Commission liability | ✅ Reuse OK. Add attribution in README, UI footer and model card. Copy the exact attribution line from the EUR-Lex legal notice page (checkpoint below). |
+| Attribution: © European Union, https://eur-lex.europa.eu/, 1998-2026 (GDPR, AI Act, DORA, Omnibus) | Commission reuse policy, Decision 2011/833/EU: commercial and non-commercial reuse allowed, acknowledge source, don't distort meaning, no Commission liability | ✅ Reuse OK. Add attribution in README, UI footer and model card. Copy the exact attribution line from the EUR-Lex legal notice page (checkpoint below). |
 | Authenticity | Only the Official Journal (eOJ) is legally authentic; consolidated versions are documentation only | Answer footer: "Not legal advice. Source: EUR-Lex, consolidated text as of <date>." Store `celex`, `version_date`, `source_url` per chunk. |
 | Databricks Free Edition | Non-commercial use only | ✅ Portfolio is non-commercial. State it in README. |
 | gpt-oss-120b | Apache-2.0 | ✅ |
@@ -50,7 +50,7 @@ Compliance analysts, DPOs and ML engineers at mid-size EU companies in **energy 
 | gte-large-en / bge-large-en | Apache-2.0 / MIT (verify) | ✅ but English-only → not primary |
 | Raw corpus in git | Allowed, but large and versioned elsewhere | Do **not** commit texts; ingest to a UC volume. Commit only manifests (CELEX, language, version date, checksum). |
 
-Checkpoint: open the EUR-Lex legal notice, copy the attribution wording into `docs/discovery/licences.md`, screenshot it for the tutorial.
+Checkpoint: Checked 2026-11-02 against the EUR-Lex legal notice (screenshot in docs/tutorial/img/sprint0)
 
 ## 6. Platform constraints (Free Edition) and design consequences
 

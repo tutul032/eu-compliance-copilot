@@ -1,7 +1,6 @@
 # 2. Embedding model: multilingual qwen3-embedding-0-6b
 
-- **Status:** Proposed
-- **Date:** 2026-11-01
+- **Status:** Accepted (2026-11-01), to be re-validated with German-subset recall@5 in Sprint 1 (S1-7).
 
 ## Context
 Users ask in German or English, and the corpus holds both language versions of each regulation.
@@ -11,15 +10,17 @@ English-only models available on Free Edition (`gte-large-en`, `bge-large-en`) w
 German query only against German chunks, and only weakly.
 
 ## Decision
-- Embed all chunks and queries with **`qwen3-embedding-0-6b`** (multilingual, Apache-2.0; licence
-  to be verified on the model card), one index per environment containing EN and DE chunks.
-- Validate in Sprint 1 against the German subset of `eval/questions.yaml`.
-- **Fallback** if the targets are missed: index DE and EN chunks separately and route each query
-  by its detected language.
+- Use qwen3-embedding-0-6b (multilingual) for all chunks.
+- Index EN **and** DE texts in one index with a `lang` column, so German queries also get keyword matches.
+- Fallback if DE recall@5 < 85 %: filter by query language, or use per-language indexes.
+
+## Evidence (smoke test, 3 EN chunks, HYBRID, databricks-qwen3-embedding-0-6b)
+| Query | Top-1 | Score | Runner-up | Score |
+|---|---|---|---|---|
+| EN "How fast must a data breach be reported?" | GDPR Art. 33 | 1.0 | GDPR Art. 6 | 0.976 |
+| DE "Innerhalb welcher Frist muss eine Datenpanne gemeldet werden?" | GDPR Art. 33 | 0.5 | DORA Art. 64 | 0.492 |
+
+The DE score of 0.5 is consistent with only the vector side contributing (no keyword overlap with English text); the margin is small.
 
 ## Consequences
-- One index serves both languages; no language detection is needed on the main path.
-- Changing the model later means re-embedding the whole corpus and rebuilding every index, so the
-  choice is costly to reverse and recorded here.
-- Embedding quality on legal German is unproven until the Sprint 1 eval; the fallback adds a
-  routing step and doubles the indexes.
+First sync of a new index took ~<your minutes> on Free Edition; jobs must wait for `ready` before querying.
