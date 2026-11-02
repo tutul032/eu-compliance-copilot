@@ -26,20 +26,14 @@ uv run ruff check .
 uv run python -m pytest
 ```
 
-## Source and attribution
+## Data sources and licence
 
-<!-- TODO: copy the exact attribution line from the EUR-Lex legal notice
-     (docs/discovery/discovery.md, section 5). -->
-Regulation texts: EUR-Lex, © European Union. _Attribution wording to be added from the EUR-Lex
-legal notice._
+Legal texts: © European Union, https://eur-lex.europa.eu/, 1998-2026. Reused under Commission
+Decision 2011/833/EU.
 
-Only the Official Journal is legally authentic; consolidated versions are documentation only.
-**This project does not give legal advice.**
+Only the Official Journal of the EU is authentic. This project gives no legal advice.
 
-## Non-commercial use
-
-This is a non-commercial portfolio project. It runs on Databricks Free Edition, which permits
-non-commercial use only.
+Runs on Databricks Free Edition (non-commercial use).
 
 ## Licence
 
