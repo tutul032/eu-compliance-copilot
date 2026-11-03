@@ -1,5 +1,5 @@
 {
-  "name": "energy-lakehouse-de",
+  "name": "eu-compliance-copilot",
   // Base image (FROM) in .devcontainer/Dockerfile; Python minor = .python-version / CI (3.12).
   "build": {
     "dockerfile": "Dockerfile"
@@ -21,11 +21,13 @@
   "remoteUser": "vscode",
   // The Linux venv lives outside the bind-mounted workspace, so it never clobbers a host .venv.
   "containerEnv": {
-    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.venvs/energy-lakehouse-de",
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.venvs/eu-compliance-copilot",
     "UV_LINK_MODE": "copy"
   },
   "remoteEnv": {
-    "PATH": "/home/vscode/.venvs/energy-lakehouse-de/bin:${containerEnv:PATH}"
+    "PATH": "/home/vscode/.venvs/eu-compliance-copilot/bin:${containerEnv:PATH}",
+    "TF_VAR_databricks_host": "https://dbc-405898bc-c90e.cloud.databricks.com",
+    "DATABRICKS_CONFIG_PROFILE": "free"
   },
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   // Callback port of `databricks auth login` (OAuth U2M): the host browser redirects here.

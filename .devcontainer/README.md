@@ -13,7 +13,7 @@ the same container and runs the tests in it (`ci.yml`, job `devcontainer`).
 | Docker CLI | feature default (latest release at build time), using the host daemon | feature `docker-outside-of-docker:1` |
 
 After the container is created, `post-create.sh` runs `uv sync --locked` (venv in
-`/home/vscode/.venvs/energy-lakehouse-de`, outside the workspace). It does not install git hooks
+`/home/vscode/.venvs/eu-compliance-copilot`, outside the workspace). It does not install git hooks
 (see [Git hooks](#git-hooks)).
 You work as the non-root user `vscode`. No credentials are copied or mounted into the container.
 
@@ -89,6 +89,6 @@ never overwrites the host's hook.
 - **`-v` paths refer to the host.** The Docker daemon runs on the host, so
   `docker run -v "$PWD/...:/data"` mounts a host path that does not exist (`/workspaces/...`).
   To extract inside the container, run the extractor directly (`uv run python -m
-  energy_lakehouse.extract_local --out data/landing`), or use a named volume and `docker cp`.
+  eu-compliance-copilot.extract_local --out data/landing`), or use a named volume and `docker cp`.
 - **Logins don't survive a rebuild** (Databricks and `gh`). This is intentional: nothing secret
   is mounted from the host.
