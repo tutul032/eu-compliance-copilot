@@ -10,7 +10,7 @@ variable "catalog" {
 }
 
 variable "platform_owner" {
-  description = "User who owns the compliance_* schemas."
+  description = "User who owns compliance_dev and reads compliance_staging and compliance_prod."
   type        = string
   default     = "rezaul.tutul@yahoo.com"
 }
