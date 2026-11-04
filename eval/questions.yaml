@@ -2,7 +2,9 @@
 # Goes to: eval/questions.yaml
 # Fields:
 #   expected_behavior: answer | tool | answer+tool | out_of_scope | refuse | correct_premise
-#   expected_sources: articles that MUST appear among citations (any one of them counts as a hit unless all_required: true)
+#   expected_sources: [{reg: AIA, article: "113"}]
+#    key_facts: ["2 December 2027 for Annex III / Art. 6(2) systems", "2 August 2028 for Annex I / Art. 6(1) systems", "originally 2 August 2026"]
+#    notes: "Consolidated text 02024R1689-20260727 includes Reg. 2026/1744 (M1)."
 #   key_facts: facts the answer must contain (graded by LLM judge + spot check)
 #   reviewed: set to true after checking against the EUR-Lex text yourself (discovery task)
 # Regulations: GDPR = 32016R0679, AIA = 32024R1689 (as amended by 2026/1744), DORA = 32022R2554

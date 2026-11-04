@@ -5,6 +5,13 @@ release dates (UTC).
 
 ## [Unreleased]
 
+### Added
+- Corpus manifest `corpus/manifest.yaml`: 12 entries, 6 EUR-Lex sources in EN and DE (GDPR and
+  AI Act consolidated plus original for recitals, DORA original, Digital Omnibus on AI original).
+- Its validator `eucc.corpus.manifest` (unique ids, every source in both languages, URL matches
+  CELEX and language), tested in `tests/test_manifest.py`.
+- Spike `docs/spikes/s1-2-eurlex-format.md`: ingest HTML and parse the ELI structure, not PDF.
+
 ## [0.0.1] - Sprint 0 scaffold
 
 ### Added
