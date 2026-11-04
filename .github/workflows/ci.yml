@@ -1,6 +1,6 @@
 name: ci
 
-# Lint + unit tests. No Databricks auth yet: bundle validation as a service principal comes later.
+# Lint + unit tests, then validate the staging bundle as the CI/CD service principal (sp-eucc-cicd).
 on:
   pull_request:
   push:
@@ -21,3 +21,10 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run python -m pytest
+      - uses: databricks/setup-cli@v1.23.0
+      - name: Validate bundle (staging)
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+          DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+        run: databricks bundle validate -t staging

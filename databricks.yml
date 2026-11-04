@@ -1,6 +1,6 @@
 # Databricks Asset Bundle for eu-compliance-copilot.
 # Workspace host is set here (all targets); no `profile` so service-principal env-var auth
-# (CI, later) works. Locally, pass `-p free` on the command line.
+# (CI) works. Locally, pass `-p free` on the command line.
 #
 # One Free Edition workspace hosts all targets; each target uses its own schema in the
 # `workspace` catalog. The schemas are created by infra/terraform/, never by the bundle.
@@ -31,6 +31,11 @@ targets:
     # used"). In a multi-workspace setup (one workspace per target) the prefix would not be needed.
     presets:
       name_prefix: "[staging] "
+    workspace:
+      # Private to the deploying identity (the CI/CD SP in CI), unlike /Workspace/Shared.
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    run_as:
+      service_principal_name: 0af2526a-d869-4722-8988-c45fffd0144b
     variables:
       schema: compliance_staging
 
@@ -40,5 +45,10 @@ targets:
     # used"). In a multi-workspace setup (one workspace per target) the prefix would not be needed.
     presets:
       name_prefix: "[prod] "
+    workspace:
+      # Private to the deploying identity (the CI/CD SP in CI), unlike /Workspace/Shared.
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    run_as:
+      service_principal_name: 0af2526a-d869-4722-8988-c45fffd0144b
     variables:
       schema: compliance_prod
