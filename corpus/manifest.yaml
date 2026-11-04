@@ -130,7 +130,7 @@ entries:
     revision: null
     source_url: https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32026R1744
     format: html
-    expected_units: {articles: 7, recitals: 47, annexes: 0}
+    expected_units: {articles: 4, recitals: 47, annexes: 0}
     sha256: null
   - id: omnibus-original-de
     reg: OMNIBUS_AI
@@ -141,5 +141,5 @@ entries:
     revision: null
     source_url: https://eur-lex.europa.eu/legal-content/DE/TXT/HTML/?uri=CELEX:32026R1744
     format: html
-    expected_units: {articles: 7, recitals: 47, annexes: 0}
+    expected_units: {articles: 4, recitals: 47, annexes: 0}
     sha256: null

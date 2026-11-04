@@ -14,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 Lang = Literal["en", "de"]
 LANGS: frozenset[str] = frozenset({"en", "de"})
+# Cellar negotiates language with ISO 639-2 codes, not the two-letter codes EUR-Lex uses.
+FETCH_LANGS: dict[str, str] = {"en": "eng", "de": "deu"}
 
 DEFAULT_PATH = Path(__file__).resolve().parents[3] / "corpus" / "manifest.yaml"
 
@@ -65,6 +67,16 @@ class ManifestEntry(BaseModel):
     def source(self) -> str:
         """The id without its language suffix: the same for both languages of a document."""
         return self.id.removesuffix(f"-{self.lang}")
+
+    @property
+    def fetch_url(self) -> str:
+        """Where the extractor downloads from (Cellar); source_url stays for human citations."""
+        return f"http://publications.europa.eu/resource/celex/{self.celex}"
+
+    @property
+    def fetch_lang(self) -> str:
+        """The Accept-Language value that selects this entry's language on Cellar."""
+        return FETCH_LANGS[self.lang]
 
 
 class Manifest(BaseModel):

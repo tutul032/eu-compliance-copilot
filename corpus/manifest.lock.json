@@ -1,0 +1,100 @@
+{
+  "entries": [
+    {
+      "id": "aia-consolidated-de",
+      "fetch_url": "http://publications.europa.eu/resource/celex/02024R1689-20260727",
+      "final_url": "http://publications.europa.eu/resource/cellar/b1730fb2-8f1c-11f1-9262-01aa75ed71a1.0003.02/DOC_2",
+      "sha256": "e7a8a3b90db3ead22ea5c183a6e83a3f2f8783bb6392e7e4504d3759469b3e67",
+      "bytes": 901043,
+      "fetched_at": "2026-11-04T21:46:22+00:00"
+    },
+    {
+      "id": "aia-consolidated-en",
+      "fetch_url": "http://publications.europa.eu/resource/celex/02024R1689-20260727",
+      "final_url": "http://publications.europa.eu/resource/cellar/b1730fb2-8f1c-11f1-9262-01aa75ed71a1.0001.03/DOC_1",
+      "sha256": "5e7719f77e8a606b257dc25958ee3222c4383300a5a34270a5b850a2ce8b8715",
+      "bytes": 851286,
+      "fetched_at": "2026-11-04T21:46:20+00:00"
+    },
+    {
+      "id": "aia-original-de",
+      "fetch_url": "http://publications.europa.eu/resource/celex/32024R1689",
+      "final_url": "http://publications.europa.eu/resource/cellar/dc8116a1-3fe6-11ef-865a-01aa75ed71a1.0004.03/DOC_1",
+      "sha256": "126daa7d62d9b0e9f4700d9ba5504b4a59ca9205b8764a1a27e40817d3144b3b",
+      "bytes": 1338179,
+      "fetched_at": "2026-11-04T21:46:27+00:00"
+    },
+    {
+      "id": "aia-original-en",
+      "fetch_url": "http://publications.europa.eu/resource/celex/32024R1689",
+      "final_url": "http://publications.europa.eu/resource/cellar/dc8116a1-3fe6-11ef-865a-01aa75ed71a1.0006.03/DOC_1",
+      "sha256": "8f0b656302f9864cc87e040c371f209a9d65ae1a6cecc25ca5eb737e872d721a",
+      "bytes": 1262391,
+      "fetched_at": "2026-11-04T21:46:25+00:00"
+    },
+    {
+      "id": "dora-original-de",
+      "fetch_url": "http://publications.europa.eu/resource/celex/32022R2554",
+      "final_url": "http://publications.europa.eu/resource/cellar/0caf473a-85bd-11ed-9887-01aa75ed71a1.0004.03/DOC_1",
+      "sha256": "1b935144ff7f773068daa470aeba4036873cf555c883ab389ab3cf45e1a93717",
+      "bytes": 783994,
+      "fetched_at": "2026-11-04T21:46:32+00:00"
+    },
+    {
+      "id": "dora-original-en",
+      "fetch_url": "http://publications.europa.eu/resource/celex/32022R2554",
+      "final_url": "http://publications.europa.eu/resource/cellar/0caf473a-85bd-11ed-9887-01aa75ed71a1.0006.03/DOC_1",
+      "sha256": "cf50d8f023d23b2a56f535aaee0760eba7f1925ef08a9858c5c31d43d414f46b",
+      "bytes": 746866,
+      "fetched_at": "2026-11-04T21:46:29+00:00"
+    },
+    {
+      "id": "gdpr-consolidated-de",
+      "fetch_url": "http://publications.europa.eu/resource/celex/02016R0679-20160504",
+      "final_url": "http://publications.europa.eu/resource/cellar/5f2552c2-cc45-11e6-ad7c-01aa75ed71a1.0001.02/DOC_3",
+      "sha256": "ad895d90dc35be2f12371af880380af2282c68f370b3d207e5a7e8186cc094a1",
+      "bytes": 503459,
+      "fetched_at": "2026-11-04T21:46:12+00:00"
+    },
+    {
+      "id": "gdpr-consolidated-en",
+      "fetch_url": "http://publications.europa.eu/resource/celex/02016R0679-20160504",
+      "final_url": "http://publications.europa.eu/resource/cellar/5f2552c2-cc45-11e6-ad7c-01aa75ed71a1.0022.03/DOC_1",
+      "sha256": "a681ff22f32f125749af6e96947224369efc132edb8a95b12637e357df1056de",
+      "bytes": 462324,
+      "fetched_at": "2026-11-04T21:46:10+00:00"
+    },
+    {
+      "id": "gdpr-original-de",
+      "fetch_url": "http://publications.europa.eu/resource/celex/32016R0679",
+      "final_url": "http://publications.europa.eu/resource/cellar/3e485e15-11bd-11e6-ba9a-01aa75ed71a1.0004.03/DOC_1",
+      "sha256": "219040a03cea829785c9f9752dcab9bfcee7b3c012092f5da8567640a816116d",
+      "bytes": 862613,
+      "fetched_at": "2026-11-04T21:46:17+00:00"
+    },
+    {
+      "id": "gdpr-original-en",
+      "fetch_url": "http://publications.europa.eu/resource/celex/32016R0679",
+      "final_url": "http://publications.europa.eu/resource/cellar/3e485e15-11bd-11e6-ba9a-01aa75ed71a1.0006.03/DOC_1",
+      "sha256": "962539af03738bf552319ff4ce42d69e5f95a576307c4dfed7bf87e81b646b9d",
+      "bytes": 806864,
+      "fetched_at": "2026-11-04T21:46:15+00:00"
+    },
+    {
+      "id": "omnibus-original-de",
+      "fetch_url": "http://publications.europa.eu/resource/celex/32026R1744",
+      "final_url": "http://publications.europa.eu/resource/cellar/b459c07f-86fb-11f1-bf5e-01aa75ed71a1.0004.03/DOC_1",
+      "sha256": "b3d26418cdea495ab8da3f4c4d42c25f849a0c123dd18589b4498cd34fff4777",
+      "bytes": 374753,
+      "fetched_at": "2026-11-04T21:46:36+00:00"
+    },
+    {
+      "id": "omnibus-original-en",
+      "fetch_url": "http://publications.europa.eu/resource/celex/32026R1744",
+      "final_url": "http://publications.europa.eu/resource/cellar/b459c07f-86fb-11f1-bf5e-01aa75ed71a1.0006.03/DOC_1",
+      "sha256": "9d754652b867722807e4219c85912ce354233e58a1b4eb8c7752b4d1922993db",
+      "bytes": 351287,
+      "fetched_at": "2026-11-04T21:46:34+00:00"
+    }
+  ]
+}

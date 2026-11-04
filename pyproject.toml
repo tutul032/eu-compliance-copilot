@@ -8,8 +8,10 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "databricks-sdk>=0.161.0",
     "pydantic>=2.14.2",
     "pyyaml>=6.0.3",
+    "requests>=2.34.2",
 ]
 
 [build-system]
@@ -19,6 +21,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
+    "responses>=0.26.3",
     "ruff>=0.17.3",
 ]
 

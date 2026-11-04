@@ -78,3 +78,18 @@ def test_url_needs_full_celex():
 def test_unknown_field_rejected():
     with pytest.raises(ValidationError, match="sha_256"):
         Manifest.model_validate({"entries": [_entry("en", sha_256=None)]})
+
+
+@pytest.mark.parametrize(("lang", "fetch_lang"), [("en", "eng"), ("de", "deu")])
+def test_fetch_properties_are_computed(lang, fetch_lang):
+    entry = Manifest.model_validate({"entries": [_entry("en"), _entry("de")]}).entries[
+        0 if lang == "en" else 1
+    ]
+    assert entry.fetch_url == "http://publications.europa.eu/resource/celex/02016R0679-20160504"
+    assert entry.fetch_lang == fetch_lang
+    assert entry.source_url.startswith("https://eur-lex.europa.eu/")
+
+
+def test_fetch_url_is_not_a_yaml_field():
+    with pytest.raises(ValidationError, match="fetch_url"):
+        Manifest.model_validate({"entries": [_entry("en", fetch_url="http://x"), _entry("de")]})

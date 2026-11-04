@@ -243,3 +243,6 @@ tfplan
 *.tfstate.*
 tfplan
 *.tfplan
+
+# Downloaded regulation texts (python -m eucc.extract --out data/raw): only the lock is committed.
+data/
