@@ -1,0 +1,145 @@
+# Corpus manifest: the EUR-Lex documents to ingest. Texts are not committed, only this list.
+# Scope and values: docs/spikes/s1-2-eurlex-format.md. Validated by eucc.corpus.manifest.
+#
+# Consolidated texts have no recitals, so recitals come from the original acts. expected_units
+# counts what each entry is used for, not everything in the document: an original act used for
+# recitals expects 0 articles, even though it contains them.
+# sha256 is filled by the extractor (S1-3).
+entries:
+  - id: gdpr-consolidated-en
+    reg: GDPR
+    celex: 02016R0679-20160504
+    lang: en
+    role: articles
+    version_date: 2016-05-04
+    revision: "000.002"
+    source_url: https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:02016R0679-20160504
+    format: html
+    expected_units: {articles: 99, recitals: 0, annexes: 0}
+    sha256: null
+  - id: gdpr-consolidated-de
+    reg: GDPR
+    celex: 02016R0679-20160504
+    lang: de
+    role: articles
+    version_date: 2016-05-04
+    revision: "000.003"
+    source_url: https://eur-lex.europa.eu/legal-content/DE/TXT/HTML/?uri=CELEX:02016R0679-20160504
+    format: html
+    expected_units: {articles: 99, recitals: 0, annexes: 0}
+    sha256: null
+
+  - id: gdpr-original-en
+    reg: GDPR
+    celex: 32016R0679
+    lang: en
+    role: recitals
+    version_date: 2016-05-04
+    revision: null
+    source_url: https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32016R0679
+    format: html
+    expected_units: {articles: 0, recitals: 173, annexes: 0}
+    sha256: null
+  - id: gdpr-original-de
+    reg: GDPR
+    celex: 32016R0679
+    lang: de
+    role: recitals
+    version_date: 2016-05-04
+    revision: null
+    source_url: https://eur-lex.europa.eu/legal-content/DE/TXT/HTML/?uri=CELEX:32016R0679
+    format: html
+    expected_units: {articles: 0, recitals: 173, annexes: 0}
+    sha256: null
+
+  - id: aia-consolidated-en
+    reg: AIA
+    celex: 02024R1689-20260727
+    lang: en
+    role: articles
+    version_date: 2026-07-27
+    revision: "001.001"
+    source_url: https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:02024R1689-20260727
+    format: html
+    expected_units: {articles: 119, recitals: 0, annexes: 13}
+    sha256: null
+  - id: aia-consolidated-de
+    reg: AIA
+    celex: 02024R1689-20260727
+    lang: de
+    role: articles
+    version_date: 2026-07-27
+    revision: "001.002"
+    source_url: https://eur-lex.europa.eu/legal-content/DE/TXT/HTML/?uri=CELEX:02024R1689-20260727
+    format: html
+    expected_units: {articles: 119, recitals: 0, annexes: 13}
+    sha256: null
+
+  - id: aia-original-en
+    reg: AIA
+    celex: 32024R1689
+    lang: en
+    role: recitals
+    version_date: 2024-07-12
+    revision: null
+    source_url: https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32024R1689
+    format: html
+    expected_units: {articles: 0, recitals: 180, annexes: 0}
+    sha256: null
+  - id: aia-original-de
+    reg: AIA
+    celex: 32024R1689
+    lang: de
+    role: recitals
+    version_date: 2024-07-12
+    revision: null
+    source_url: https://eur-lex.europa.eu/legal-content/DE/TXT/HTML/?uri=CELEX:32024R1689
+    format: html
+    expected_units: {articles: 0, recitals: 180, annexes: 0}
+    sha256: null
+
+  - id: dora-original-en
+    reg: DORA
+    celex: 32022R2554
+    lang: en
+    role: articles+recitals
+    version_date: 2022-12-27
+    revision: null
+    source_url: https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32022R2554
+    format: html
+    expected_units: {articles: 64, recitals: 106, annexes: 0}
+    sha256: null
+  - id: dora-original-de
+    reg: DORA
+    celex: 32022R2554
+    lang: de
+    role: articles+recitals
+    version_date: 2022-12-27
+    revision: null
+    source_url: https://eur-lex.europa.eu/legal-content/DE/TXT/HTML/?uri=CELEX:32022R2554
+    format: html
+    expected_units: {articles: 64, recitals: 106, annexes: 0}
+    sha256: null
+
+  - id: omnibus-original-en
+    reg: OMNIBUS_AI
+    celex: 32026R1744
+    lang: en
+    role: amendments+recitals
+    version_date: 2026-07-24
+    revision: null
+    source_url: https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32026R1744
+    format: html
+    expected_units: {articles: 7, recitals: 47, annexes: 0}
+    sha256: null
+  - id: omnibus-original-de
+    reg: OMNIBUS_AI
+    celex: 32026R1744
+    lang: de
+    role: amendments+recitals
+    version_date: 2026-07-24
+    revision: null
+    source_url: https://eur-lex.europa.eu/legal-content/DE/TXT/HTML/?uri=CELEX:32026R1744
+    format: html
+    expected_units: {articles: 7, recitals: 47, annexes: 0}
+    sha256: null
