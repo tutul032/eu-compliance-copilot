@@ -430,6 +430,7 @@ Scope decision: the planned extractor container and scheduled GitHub workflow mo
 | EUR-Lex returns `202`, 0 bytes | Bot challenge on the website | Use Cellar: `publications.europa.eu/resource/celex/<CELEX>` with `Accept` + `Accept-Language` |
 | `found 4 articles, expected 7` (Omnibus) | Manual count included quoted amendment text | Trust ELI-id counts; fix manifest and spike |
 | `Copy-Item … Downloads\… does not exist` | Download still in progress | Wait and retry |
+| `GH013: Repository rule violations … Changes must be made through a pull request` | Committed on local `master` after the feature branch was merged and deleted | `git branch <new>`, `git switch <new>`, `git branch -f master origin/master`, then push the branch and open a PR |
 
 ## What you learned
 
