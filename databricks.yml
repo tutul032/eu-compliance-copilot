@@ -4,12 +4,27 @@
 #
 # One Free Edition workspace hosts all targets; each target uses its own schema in the
 # `workspace` catalog. The schemas are created by infra/terraform/, never by the bundle.
-# No resources yet.
 bundle:
   name: eu-compliance-copilot
 
 workspace:
   host: https://dbc-405898bc-c90e.cloud.databricks.com
+
+include:
+  - resources/*.yml
+
+# The eucc package as a wheel, built from the repo root on every deploy and installed in the job
+# environments (resources/*.yml: ../dist/*.whl). The CLI uploads it and replaces the local path.
+# --clear drops stale wheels, so the glob matches exactly one file; dynamic_version appends a
+# timestamp to the version so serverless environments never reuse a cached older build.
+artifacts:
+  eucc:
+    type: whl
+    path: .
+    build: uv build --wheel --clear
+    dynamic_version: true
+    files:
+      - source: dist/*.whl
 
 variables:
   catalog:

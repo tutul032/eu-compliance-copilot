@@ -1,0 +1,38 @@
+# Builds silver_provisions and gold_chunks in this target's schema from its raw volume
+# (/Volumes/<catalog>/<schema>/raw/eurlex, filled by eucc.extract --upload-to). No schedule yet:
+# run with `databricks bundle run build_corpus -t <target> -p free`. No cluster definition: the task
+# runs on serverless compute.
+resources:
+  jobs:
+    build_corpus:
+      name: build_corpus
+      # gold_chunks is merged: one run at a time, an overlapping trigger waits in the queue.
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      timeout_seconds: 1800
+      environments:
+        # The wheel (databricks.yml artifacts; the CLI uploads it and replaces the path) needs
+        # Python 3.12, so environment_version 3 or later: version 2 runs 3.11 and pip rejects it.
+        # The parser pins equal uv.lock (tests/test_build_corpus_job.py): a parser upgrade must
+        # not change chunk text, and so rewrite gold_chunks, on its own.
+        - environment_key: eucc
+          spec:
+            environment_version: "5"
+            dependencies:
+              - ../dist/*.whl
+              - beautifulsoup4==4.15.0
+              - lxml==6.1.3
+      tasks:
+        - task_key: build_corpus
+          environment_key: eucc
+          # A failed contract is a signal, not a transient error; a retry would repeat it.
+          max_retries: 0
+          python_wheel_task:
+            package_name: eucc
+            entry_point: build_corpus_job
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}

@@ -17,7 +17,11 @@ LANGS: frozenset[str] = frozenset({"en", "de"})
 # Cellar negotiates language with ISO 639-2 codes, not the two-letter codes EUR-Lex uses.
 FETCH_LANGS: dict[str, str] = {"en": "eng", "de": "deu"}
 
-DEFAULT_PATH = Path(__file__).resolve().parents[3] / "corpus" / "manifest.yaml"
+# In an installed wheel the manifest sits next to this module (pyproject.toml: force-include);
+# in the repo, including editable installs, it is corpus/manifest.yaml.
+_PACKAGED_PATH = Path(__file__).resolve().with_name("manifest.yaml")
+_REPO_PATH = Path(__file__).resolve().parents[3] / "corpus" / "manifest.yaml"
+DEFAULT_PATH = _PACKAGED_PATH if _PACKAGED_PATH.is_file() else _REPO_PATH
 
 
 class ExpectedUnits(BaseModel):
