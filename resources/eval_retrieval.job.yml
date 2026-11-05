@@ -1,0 +1,36 @@
+# Retrieval eval: recall@5 and recall@10 (one top-10 query per question) of chunks_idx over the
+# questions with expected_sources (eval/questions.yaml, shipped in the wheel), in three variants:
+# no filter, the question's language, and that language with articles and annexes only (no
+# recitals); one MLflow run per variant in ${var.retrieval_experiment}. Run after
+# build_corpus (whose index task leaves chunks_idx in sync):
+# `databricks bundle run eval_retrieval -t <target> -p free`. Serverless, no Spark needed.
+resources:
+  jobs:
+    eval_retrieval:
+      name: eval_retrieval
+      max_concurrent_runs: 1
+      timeout_seconds: 1800
+      environments:
+        # Python 3.12 for the wheel: environment_version 3 or later (see build_corpus.job.yml).
+        # databricks-vectorsearch brings mlflow-skinny, which is enough for logging runs; its pin
+        # equals uv.lock (tests/test_job_environments.py).
+        - environment_key: eucc
+          spec:
+            environment_version: "5"
+            dependencies:
+              - ../dist/*.whl
+              - databricks-vectorsearch==0.82
+      tasks:
+        - task_key: eval_retrieval
+          environment_key: eucc
+          max_retries: 0
+          python_wheel_task:
+            package_name: eucc
+            entry_point: eval_retrieval_job
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+              - --experiment
+              - ${var.retrieval_experiment}

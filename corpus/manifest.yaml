@@ -61,7 +61,7 @@ entries:
     revision: "001.001"
     source_url: https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:02024R1689-20260727
     format: html
-    expected_units: {articles: 119, recitals: 0, annexes: 13}
+    expected_units: {articles: 119, recitals: 0, annexes: 14}
     sha256: null
   - id: aia-consolidated-de
     reg: AIA
@@ -72,7 +72,7 @@ entries:
     revision: "001.002"
     source_url: https://eur-lex.europa.eu/legal-content/DE/TXT/HTML/?uri=CELEX:02024R1689-20260727
     format: html
-    expected_units: {articles: 119, recitals: 0, annexes: 13}
+    expected_units: {articles: 119, recitals: 0, annexes: 14}
     sha256: null
 
   - id: aia-original-en

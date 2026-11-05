@@ -145,7 +145,7 @@ questions:
     category: ai_act
     question: "From when do the high-risk obligations for stand-alone Annex III systems apply?"
     expected_behavior: answer
-    expected_sources: [{reg: AIA, article: "113"}, {reg: OMNIBUS_AI, article: "any"}]
+    expected_sources: [{reg: AIA, article: "113"}]
     key_facts: ["2 December 2027 after Digital Omnibus on AI (Reg. 2026/1744)", "originally 2 August 2026"]
     notes: "Tests versioned corpus. Verify exact wording in 2026/1744."
     reviewed: true

@@ -4,14 +4,12 @@ Whether Delta accepts them is only proven by running the job on Databricks.
 """
 
 import shutil
-import tomllib
 from dataclasses import fields
 from datetime import date
 from pathlib import Path, PurePosixPath
 from unittest.mock import MagicMock
 
 import pytest
-import yaml
 from conftest import FIXTURES, fixture_bytes, make_entry
 
 from eucc.chunk import Chunk, chunk_provision
@@ -21,7 +19,6 @@ from eucc.extract import output_path
 from eucc.jobs import build_corpus as job
 from eucc.parse import Provision, parse_entry
 
-REPO = Path(__file__).resolve().parents[1]
 GOLD = "`workspace`.`compliance_dev`.`gold_chunks`"
 SILVER = "`workspace`.`compliance_dev`.`silver_provisions`"
 
@@ -206,46 +203,3 @@ def test_parameters_are_required(missing):
     del args[position : position + 2]
     with pytest.raises(SystemExit):
         job.main(args)
-
-
-# The packaging and the job definition, which only fail once deployed otherwise
-
-
-def _pyproject() -> dict:
-    return tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
-
-
-def _job() -> dict:
-    definition = yaml.safe_load((REPO / "resources/build_corpus.job.yml").read_text("utf-8"))
-    return definition["resources"]["jobs"]["build_corpus"]
-
-
-def test_entry_point_exists_and_names_this_module():
-    assert _pyproject()["project"]["scripts"]["build_corpus_job"] == ("eucc.jobs.build_corpus:main")
-
-
-def test_wheel_task_calls_the_entry_point_with_bundle_variables():
-    task = _job()["tasks"][0]["python_wheel_task"]
-    assert task["package_name"] == _pyproject()["project"]["name"]
-    assert task["entry_point"] == "build_corpus_job"
-    assert task["parameters"] == ["--catalog", "${var.catalog}", "--schema", "${var.schema}"]
-
-
-def test_manifest_ships_in_the_wheel_where_the_loader_looks():
-    include = _pyproject()["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
-    assert include["corpus/manifest.yaml"] == "eucc/corpus/manifest.yaml"
-
-
-def test_environment_pins_equal_the_lock_file():
-    lock = tomllib.loads((REPO / "uv.lock").read_text(encoding="utf-8"))
-    versions = {package["name"]: package.get("version") for package in lock["package"]}
-    dependencies = _job()["environments"][0]["spec"]["dependencies"]
-    pins = dict(d.split("==") for d in dependencies if "==" in d)
-    assert pins == {name: versions[name] for name in ("beautifulsoup4", "lxml")}
-    assert "../dist/*.whl" in dependencies
-
-
-def test_environment_runs_the_python_the_wheel_requires():
-    # Version 2 is Python 3.11; 3 and later are 3.12, what requires-python asks for.
-    assert _pyproject()["project"]["requires-python"] == ">=3.12"
-    assert int(_job()["environments"][0]["spec"]["environment_version"]) >= 3
