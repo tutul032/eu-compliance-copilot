@@ -18,6 +18,13 @@ dependencies = [
 
 [project.scripts]
 build_corpus_job = "eucc.jobs.build_corpus:main"
+index_job = "eucc.jobs.index:main"
+eval_retrieval_job = "eucc.jobs.eval_retrieval:main"
+
+[project.optional-dependencies]
+vectorsearch = [
+    "databricks-vectorsearch>=0.82",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -26,10 +33,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/eucc"]
 
-# corpus/ at the repo root stays the single source (the extractor writes its lock file next to it);
-# the job reads the manifest from the wheel. uv_build cannot include a file from outside the package.
+# corpus/ and eval/ at the repo root stay the single source (the extractor writes its lock file
+# next to the manifest); the jobs read both files from the wheel. uv_build cannot include a file from outside the package.
 [tool.hatch.build.targets.wheel.force-include]
 "corpus/manifest.yaml" = "eucc/corpus/manifest.yaml"
+"eval/questions.yaml" = "eucc/eval/questions.yaml"
 
 [dependency-groups]
 dev = [

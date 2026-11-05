@@ -32,6 +32,9 @@ variables:
     default: workspace
   schema:
     description: Schema for this target (set per target).
+  retrieval_experiment:
+    description: MLflow experiment of the retrieval eval, in the home folder of the deploying identity.
+    default: /Users/${workspace.current_user.userName}/eucc_retrieval_eval_${bundle.target}
 
 targets:
   dev:

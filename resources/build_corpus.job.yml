@@ -1,7 +1,8 @@
 # Builds silver_provisions and gold_chunks in this target's schema from its raw volume
 # (/Volumes/<catalog>/<schema>/raw/eurlex, filled by eucc.extract --upload-to). No schedule yet:
 # run with `databricks bundle run build_corpus -t <target> -p free`. No cluster definition: the task
-# runs on serverless compute.
+# runs on serverless compute. Then the index task creates or syncs chunks_idx and waits until it
+# holds every gold_chunks row (up to 30 min).
 resources:
   jobs:
     build_corpus:
@@ -10,12 +11,13 @@ resources:
       max_concurrent_runs: 1
       queue:
         enabled: true
-      timeout_seconds: 1800
+      # Build (a few minutes) plus the index task's wait of up to 30 min.
+      timeout_seconds: 3600
       environments:
         # The wheel (databricks.yml artifacts; the CLI uploads it and replaces the path) needs
         # Python 3.12, so environment_version 3 or later: version 2 runs 3.11 and pip rejects it.
-        # The parser pins equal uv.lock (tests/test_build_corpus_job.py): a parser upgrade must
-        # not change chunk text, and so rewrite gold_chunks, on its own.
+        # The pins equal uv.lock (tests/test_job_environments.py): a parser upgrade must not
+        # change chunk text, and so rewrite gold_chunks, on its own.
         - environment_key: eucc
           spec:
             environment_version: "5"
@@ -23,6 +25,7 @@ resources:
               - ../dist/*.whl
               - beautifulsoup4==4.15.0
               - lxml==6.1.3
+              - databricks-vectorsearch==0.82
       tasks:
         - task_key: build_corpus
           environment_key: eucc
@@ -31,6 +34,20 @@ resources:
           python_wheel_task:
             package_name: eucc
             entry_point: build_corpus_job
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+        - task_key: index
+          depends_on:
+            - task_key: build_corpus
+          environment_key: eucc
+          # A timeout leaves the sync running; the next run picks it up instead of starting over.
+          max_retries: 0
+          python_wheel_task:
+            package_name: eucc
+            entry_point: index_job
             parameters:
               - --catalog
               - ${var.catalog}

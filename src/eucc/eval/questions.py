@@ -4,6 +4,7 @@ Checks on load: every field known, ids unique, `expected_behavior` one of the al
 `expected_sources` present unless the behavior is `tool`, `refuse` or `out_of_scope`.
 """
 
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Annotated, Literal
@@ -18,7 +19,14 @@ ExpectedBehavior = Literal[
 # Behaviors whose answer cites no regulation text, so expected_sources may be omitted.
 BEHAVIORS_WITHOUT_SOURCES: frozenset[str] = frozenset({"tool", "refuse", "out_of_scope"})
 
-DEFAULT_PATH = Path(__file__).resolve().parents[3] / "eval" / "questions.yaml"
+# In an installed wheel the file sits next to this module (pyproject.toml: force-include); in the
+# repo, including editable installs, it is eval/questions.yaml.
+_PACKAGED_PATH = Path(__file__).resolve().with_name("questions.yaml")
+_REPO_PATH = Path(__file__).resolve().parents[3] / "eval" / "questions.yaml"
+DEFAULT_PATH = _PACKAGED_PATH if _PACKAGED_PATH.is_file() else _REPO_PATH
+
+# An article as the index stores it: 33, 4a, 75b. No wildcards: a source names one provision.
+ARTICLE_NUMBER = re.compile(r"\d+[a-z]*")
 
 
 class Source(BaseModel):
@@ -34,6 +42,11 @@ class Source(BaseModel):
     def _article_or_annex(self) -> "Source":
         if (self.article is None) == (self.annex is None):
             raise ValueError("a source needs exactly one of article or annex")
+        if self.article is not None and not ARTICLE_NUMBER.fullmatch(self.article):
+            raise ValueError(
+                f"{self.reg} article {self.article!r}: expected an article number such as "
+                "'33' or '4a'; wildcards like 'any' are not sources"
+            )
         return self
 
 

@@ -26,6 +26,18 @@ uv run ruff check .
 uv run python -m pytest
 ```
 
+### Pending cleanup
+
+The smoke test behind [ADR 0002](docs/adr/0002-embedding-model.md) left two objects in dev that
+nothing uses: the index `workspace.compliance_dev.vs_smoke_idx` (on endpoint `eucc-vs`) and its
+source table `workspace.compliance_dev.vs_smoke`. Delete them by hand, the index first, once
+`chunks_idx` is built. Not yet done: nothing in this repo deletes them.
+
+```bash
+databricks vector-search-indexes delete-index workspace.compliance_dev.vs_smoke_idx -p free
+databricks tables delete workspace.compliance_dev.vs_smoke -p free
+```
+
 ## Data sources and licence
 
 Legal texts: © European Union, https://eur-lex.europa.eu/, 1998-2026. Reused under Commission
