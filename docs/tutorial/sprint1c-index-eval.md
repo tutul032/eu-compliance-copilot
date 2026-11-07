@@ -148,6 +148,7 @@ gh api -X PATCH repos/tutul032/eu-compliance-copilot/milestones/2 -f state=close
 | cross-02 and tool-04 at 0 — suspected annex-matching bug | No annex chunk was in the top 5 at all (real misses) | Read the per-question CSV before guessing; add a unit test for annex matching |
 | Recitals fill the top-k | Long explanatory text matches questions semantically | Filter `unit_type` to article/annex for citation retrieval |
 | Small differences between variants | 34 questions: one question = 0.03 | Treat ±1 question as noise; decide on clear gaps |
+| CI fails; `gh pr create` warns "4 uncommitted changes" | `git add <folders>` missed `databricks.yml`, `pyproject.toml`, `uv.lock`, `README.md` | Stage with `git add -A`, then read `git status` before committing |
 
 ## What you learned
 

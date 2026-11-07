@@ -11,8 +11,13 @@ ENTRY_POINTS = {
     "build_corpus_job": "eucc.jobs.build_corpus:main",
     "index_job": "eucc.jobs.index:main",
     "eval_retrieval_job": "eucc.jobs.eval_retrieval:main",
+    "eval_rag_job": "eucc.jobs.eval_rag:main",
 }
-JOB_FILES = {"build_corpus": "build_corpus.job.yml", "eval_retrieval": "eval_retrieval.job.yml"}
+JOB_FILES = {
+    "build_corpus": "build_corpus.job.yml",
+    "eval_retrieval": "eval_retrieval.job.yml",
+    "eval_rag": "eval_rag.job.yml",
+}
 
 
 def _pyproject() -> dict:
@@ -51,9 +56,13 @@ def test_every_wheel_task_calls_a_declared_entry_point():
         assert params[:4] == ["--catalog", "${var.catalog}", "--schema", "${var.schema}"]
 
 
-def test_eval_logs_to_the_experiment_variable():
-    params = _job("eval_retrieval")["tasks"][0]["python_wheel_task"]["parameters"]
-    assert params[params.index("--experiment") + 1] == "${var.retrieval_experiment}"
+@pytest.mark.parametrize(
+    ("name", "variable"),
+    [("eval_retrieval", "retrieval_experiment"), ("eval_rag", "rag_experiment")],
+)
+def test_eval_logs_to_the_experiment_variable(name, variable):
+    params = _job(name)["tasks"][0]["python_wheel_task"]["parameters"]
+    assert params[params.index("--experiment") + 1] == f"${{var.{variable}}}"
 
 
 def test_index_runs_after_the_build():
@@ -88,6 +97,7 @@ def test_environment_pins_equal_the_lock_file(name):
     [
         ("build_corpus", {"beautifulsoup4", "lxml", "databricks-vectorsearch"}),
         ("eval_retrieval", {"databricks-vectorsearch"}),
+        ("eval_rag", {"mlflow-skinny", "openai", "httpx"}),
     ],
 )
 def test_environment_has_what_its_tasks_import(name, packages):

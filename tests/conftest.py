@@ -43,3 +43,12 @@ def fixture_bytes(source: str, lang: str) -> bytes:
 @pytest.fixture(params=["en", "de"])
 def lang(request) -> str:
     return request.param
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_tracing():
+    """eucc.rag's @mlflow.trace would otherwise export spans to a local MLflow store."""
+    import mlflow
+
+    mlflow.tracing.disable()
+    yield

@@ -1,0 +1,40 @@
+# RAG eval: every question of eval/questions.yaml (shipped in the wheel) except tool-only ones goes
+# through eucc.rag.answer (chunks_idx + databricks-gpt-oss-120b); behavior, citation hit, key-fact
+# coverage (LLM judge), latency and tokens are logged to MLflow in ${var.rag_experiment}, one run
+# per reasoning effort (rag_medium, rag_low), with the answers' traces. Run after build_corpus
+# (chunks_idx in sync): `databricks bundle run eval_rag -t <target> -p free`. Serverless, no
+# Spark needed.
+resources:
+  jobs:
+    eval_rag:
+      name: eval_rag
+      max_concurrent_runs: 1
+      # Two passes (reasoning effort medium, then low) of ~36 questions at ~10-25 s, plus the judge.
+      timeout_seconds: 7200
+      environments:
+        # Python 3.12 for the wheel: environment_version 3 or later (see build_corpus.job.yml).
+        # The index is queried through databricks-sdk (no vector search client); the endpoint
+        # through the SDK's OpenAI client, which needs openai and httpx. The pins equal uv.lock
+        # (tests/test_job_environments.py), so an eval run is reproducible from the lock file.
+        - environment_key: eucc
+          spec:
+            environment_version: "5"
+            dependencies:
+              - ../dist/*.whl
+              - mlflow-skinny==3.18.0
+              - openai==3.46.0
+              - httpx==0.28.1
+      tasks:
+        - task_key: eval_rag
+          environment_key: eucc
+          max_retries: 0
+          python_wheel_task:
+            package_name: eucc
+            entry_point: eval_rag_job
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+              - --experiment
+              - ${var.rag_experiment}
