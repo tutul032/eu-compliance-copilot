@@ -35,6 +35,9 @@ variables:
   retrieval_experiment:
     description: MLflow experiment of the retrieval eval, in the home folder of the deploying identity.
     default: /Users/${workspace.current_user.userName}/eucc_retrieval_eval_${bundle.target}
+  rag_experiment:
+    description: MLflow experiment of the RAG answer eval (runs and traces), in the home folder of the deploying identity.
+    default: /Users/${workspace.current_user.userName}/eucc_rag_eval_${bundle.target}
 
 targets:
   dev:
