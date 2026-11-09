@@ -38,6 +38,9 @@ variables:
   rag_experiment:
     description: MLflow experiment of the RAG answer eval (runs and traces), in the home folder of the deploying identity.
     default: /Users/${workspace.current_user.userName}/eucc_rag_eval_${bundle.target}
+  sql_warehouse_id:
+    description: SQL warehouse of the agent's energy data tool (read-only queries on workspace.energy_prod).
+    default: 4228ff3a910b0b5e
 
 targets:
   dev:

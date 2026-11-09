@@ -2,8 +2,11 @@
 
     python -m eucc.ask "How quickly must a breach be notified?" [--schema compliance_dev] [-p free]
         [--reasoning-effort low|medium] [--experiment /Users/me/eucc_traces]
+    python -m eucc.ask --agent "What was the average DE-LU day-ahead price yesterday?" -p free
 
-Prints the status, the answer and the cited provisions with their EUR-Lex links. Traces go to an
+Prints the status, the answer and the cited provisions with their EUR-Lex links. With --agent the
+question goes through eucc.agent (router, regulation search and/or the energy SQL tool), and the
+route, the SQL used and the data rows are printed too. Traces go to an
 MLflow experiment only with --experiment; without it, tracing is off (no local mlruns folder).
 """
 
@@ -53,9 +56,49 @@ def format_result(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _cell(value: Any) -> str:
+    return f"{value:.4g}" if isinstance(value, float) else "NULL" if value is None else str(value)
+
+
+def format_agent_result(result: dict[str, Any]) -> str:
+    """The route and the SQL first, then format_result, then the data rows ([D1] ...)."""
+    route = result["route"]
+    path = [
+        name
+        for name, needed in (
+            ("regulation", route["needs_regulation"]),
+            ("data", route["needs_data"]),
+        )
+        if needed
+    ]
+    lines = [f"Route: {' + '.join(path)} ({route['method']})"]
+    if route.get("regulation_query"):
+        lines.append(f"Regulation query: {route['regulation_query']}")
+    if route["needs_data"]:
+        lines.append(f"SQL: {result.get('sql') or '(none)'}")
+    lines += ["", format_result(result)]
+    data = result.get("data")
+    if data is not None:
+        lines.append("")
+        if "error" in data:
+            lines.append(f"Data tool error: {data['error']}")
+        else:
+            cited = {c["n"] for c in result.get("data_citations", [])}
+            lines.append(f"Data rows ({len(data['rows'])}): " + " | ".join(data["columns"]))
+            for n, row in enumerate(data["rows"], start=1):
+                mark = "*" if f"D{n}" in cited else " "
+                lines.append(f" {mark}[D{n}] " + " | ".join(_cell(v) for v in row))
+            if cited:
+                lines.append("  (* cited in the answer)")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("question")
+    parser.add_argument(
+        "--agent", action="store_true", help="route through the agent (regulations + energy data)"
+    )
     parser.add_argument("--catalog", default=DEFAULT_CATALOG)
     parser.add_argument("--schema", default=DEFAULT_SCHEMA)
     parser.add_argument("-p", "--profile", help="Databricks CLI profile (e.g. free)")
@@ -79,6 +122,17 @@ def main(argv: list[str] | None = None) -> None:
         mlflow.tracing.disable()
     if hasattr(sys.stdout, "reconfigure"):  # Umlauts on a Windows console.
         sys.stdout.reconfigure(encoding="utf-8")
+    if args.agent:
+        from eucc import agent
+
+        result = agent.run(
+            args.question,
+            catalog=args.catalog,
+            schema=args.schema,
+            reasoning_effort=args.reasoning_effort,
+        )
+        print(format_agent_result(result))
+        return
     result = rag.answer(
         args.question,
         catalog=args.catalog,

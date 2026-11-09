@@ -1,0 +1,140 @@
+# Energy data catalog for the SQL tool (eucc.tools.sql): the gold tables of Project 1
+# (energy forecasting and data quality), read-only, in workspace.energy_prod.
+#
+# Taken from `databricks tables get workspace.energy_prod.<table> -p free` (2026-11-09); the
+# meanings follow the Unity Catalog column comments. Project 1 owns these tables: this file only
+# describes them, nothing here creates or changes them.
+#
+# The DE-LU day-ahead price is price_eur_mwh in gold_energy_hourly (hourly, EUR/MWh) and
+# price_avg_eur_mwh / price_min_eur_mwh / price_max_eur_mwh in gold_energy_daily (per
+# Europe/Berlin calendar day, EUR/MWh). Source: SMARD (Bundesnetzagentur), CC BY 4.0.
+
+catalog: workspace
+schema: energy_prod
+
+notes:
+  - "Days are Europe/Berlin calendar days (date_local, issue_date, detection_date); hour_utc / ts_utc are UTC."
+  - "Prices are in EUR/MWh, energy in MWh; MAPE values are already percentages (3.2 means 3.2 %)."
+  - "A forecast issued on issue_date D covers the local day D+1; gold_forecast_accuracy is keyed by issue_date."
+  - "For forecast error or accuracy questions, select mape, mae and baseline_mape from gold_forecast_accuracy (with issue_date, and target unless it is filtered), so the error can be stated in % and in the target unit and compared with the naive baseline."
+  - "Data quality: gold_dq_daily_summary counts anomalies per check and severity (n = 0: nothing found); gold_dq_anomalies has the flagged rows; entities starting with 'TEST:' are injected test anomalies."
+
+tables:
+  - name: gold_energy_hourly
+    description: "Hourly German power load, DE-LU day-ahead price and generation mix (SMARD). One row per UTC hour."
+    columns:
+      - {name: hour_utc, type: timestamp, meaning: "Start of the hour (UTC)."}
+      - {name: hour_local, type: timestamp_ntz, meaning: "Start of the hour, local wall-clock time (Europe/Berlin)."}
+      - {name: total_load_mwh, type: double, meaning: "Total grid load in Germany (MWh)."}
+      - {name: price_eur_mwh, type: double, meaning: "Day-ahead price DE-LU, hourly average (EUR/MWh)."}
+      - {name: solar_mwh, type: double, meaning: "Solar (photovoltaics) generation (MWh)."}
+      - {name: wind_onshore_mwh, type: double, meaning: "Onshore wind generation (MWh)."}
+      - {name: wind_offshore_mwh, type: double, meaning: "Offshore wind generation (MWh)."}
+      - {name: lignite_mwh, type: double, meaning: "Lignite generation (MWh)."}
+      - {name: hard_coal_mwh, type: double, meaning: "Hard coal generation (MWh)."}
+      - {name: natural_gas_mwh, type: double, meaning: "Natural gas generation (MWh)."}
+      - {name: renewables_mwh, type: double, meaning: "Solar + onshore wind + offshore wind (MWh)."}
+      - {name: renewables_share, type: double, meaning: "renewables_mwh / total_load_mwh as a fraction (0.45 = 45 %); NULL if load is 0 or NULL."}
+    example_questions:
+      - "What was the highest hourly day-ahead price yesterday, and at what time?"
+      - "Which hours yesterday had a negative day-ahead price?"
+      - "How much solar power was generated between 12:00 and 13:00 yesterday?"
+
+  - name: gold_energy_daily
+    description: "Daily German energy totals and DE-LU day-ahead price statistics per Europe/Berlin calendar day (SMARD). One row per local day."
+    columns:
+      - {name: date_local, type: date, meaning: "Calendar day in Europe/Berlin."}
+      - {name: total_load_mwh, type: double, meaning: "Daily sum of the hourly total load (MWh)."}
+      - {name: solar_mwh, type: double, meaning: "Daily sum of solar generation (MWh)."}
+      - {name: wind_onshore_mwh, type: double, meaning: "Daily sum of onshore wind generation (MWh)."}
+      - {name: wind_offshore_mwh, type: double, meaning: "Daily sum of offshore wind generation (MWh)."}
+      - {name: lignite_mwh, type: double, meaning: "Daily sum of lignite generation (MWh)."}
+      - {name: hard_coal_mwh, type: double, meaning: "Daily sum of hard coal generation (MWh)."}
+      - {name: natural_gas_mwh, type: double, meaning: "Daily sum of natural gas generation (MWh)."}
+      - {name: renewables_mwh, type: double, meaning: "Daily sum of renewables generation (MWh)."}
+      - {name: price_avg_eur_mwh, type: double, meaning: "Average hourly DE-LU day-ahead price of the day (EUR/MWh)."}
+      - {name: price_min_eur_mwh, type: double, meaning: "Lowest hourly DE-LU day-ahead price of the day (EUR/MWh)."}
+      - {name: price_max_eur_mwh, type: double, meaning: "Highest hourly DE-LU day-ahead price of the day (EUR/MWh)."}
+      - {name: renewables_share_avg, type: double, meaning: "Average of the hourly renewables_share (fraction)."}
+      - {name: hour_count, type: bigint, meaning: "Hours in the day: 24, or 23/25 on DST change days."}
+      - {name: load_hours, type: bigint, meaning: "Hours with a published total load (non-NULL)."}
+      - {name: price_hours, type: bigint, meaning: "Hours with a published day-ahead price (non-NULL)."}
+      - {name: expected_hours, type: int, meaning: "Local hours in the day: 24, or 23/25 on DST change days."}
+      - {name: is_complete, type: boolean, meaning: "True if load_hours and price_hours both equal expected_hours."}
+    example_questions:
+      - "What was the average DE-LU day-ahead price yesterday?"
+      - "How did the daily average day-ahead price develop over the last 7 days?"
+      - "Wie hoch war der Anteil erneuerbarer Energien gestern?"
+
+  - name: gold_forecast_accuracy
+    description: "Accuracy of the day-ahead forecasts against actuals, per target and issue_date: MAE/MAPE of the model and of the seasonal naive baseline (same hour one week earlier). For error/accuracy questions select mape, mae and baseline_mape."
+    columns:
+      - {name: target, type: string, meaning: "Forecast target: 'total_load_mwh' (load forecast) or 'price_eur_mwh' (price forecast)."}
+      - {name: issue_date, type: date, meaning: "Local issue day D of the forecast for day D+1."}
+      - {name: n_hours, type: bigint, meaning: "Forecast hours with an actual value."}
+      - {name: mae, type: double, meaning: "Mean absolute error of the model forecast (target unit: MWh or EUR/MWh)."}
+      - {name: mape, type: double, meaning: "Mean absolute percentage error of the model forecast (%); NULL for price_eur_mwh."}
+      - {name: baseline_mae, type: double, meaning: "Mean absolute error of the seasonal naive baseline (same hour 168 h earlier)."}
+      - {name: baseline_mape, type: double, meaning: "MAPE of the seasonal naive baseline (%); NULL for price_eur_mwh."}
+    example_questions:
+      - "How did the load forecast MAPE develop over the last 7 days?"
+      - "What is the current error of the day-ahead load forecast?"
+      - "Does the price forecast beat the naive baseline (MAE) this week?"
+
+  - name: gold_forecast_hourly
+    description: "Day-ahead forecasts of total_load_mwh and price_eur_mwh, issued on local day D for every hour of local day D+1 (champion model per target). One row per target_hour_utc, target and issue_date."
+    columns:
+      - {name: target_hour_utc, type: timestamp, meaning: "Start of the forecast hour (UTC)."}
+      - {name: target_hour_local, type: timestamp_ntz, meaning: "Start of the forecast hour, local wall-clock time (Europe/Berlin)."}
+      - {name: target, type: string, meaning: "Forecast target: 'total_load_mwh' or 'price_eur_mwh'."}
+      - {name: forecast, type: double, meaning: "Forecast value in the target's unit (MWh or EUR/MWh)."}
+      - {name: model_version, type: string, meaning: "Unity Catalog version of the champion forecaster that made the forecast."}
+      - {name: issue_time_utc, type: timestamp, meaning: "When the forecast was issued (UTC)."}
+      - {name: issue_date, type: date, meaning: "Local issue day D; the forecast covers local day D+1."}
+    example_questions:
+      - "What is the load forecast for tomorrow's peak hour?"
+      - "What day-ahead price is forecast for tomorrow at 18:00?"
+      - "Which model version produced today's price forecast?"
+
+  - name: gold_dq_daily_summary
+    description: "Daily anomaly counts per check and severity from the data-quality run of each local day; checks that found nothing have n = 0. One row per detection_date, check_name and severity."
+    columns:
+      - {name: detection_date, type: date, meaning: "Local (Europe/Berlin) day of the detection run."}
+      - {name: check_name, type: string, meaning: "Detector (seasonal_robust_z, isolation_forest, completeness, physics_solar_at_night, forecast_drift_mae, forecast_drift_mape)."}
+      - {name: severity, type: string, meaning: "'critical' or 'warning'."}
+      - {name: n, type: bigint, meaning: "Rows flagged by the check with this severity in the run (0 = none)."}
+    example_questions:
+      - "Gab es gestern Auffälligkeiten bei den Datenqualitätsprüfungen?"
+      - "How many critical data-quality anomalies were found in the last 7 days?"
+
+  - name: gold_dq_anomalies
+    description: "Data-quality anomalies flagged by the daily checks (robust z-scores, IsolationForest, completeness, physics rules, forecast drift). One row per check_name, entity and ts_utc."
+    columns:
+      - {name: check_name, type: string, meaning: "Detector that flagged the row (seasonal_robust_z, isolation_forest, completeness, physics_solar_at_night, forecast_drift_mae, forecast_drift_mape)."}
+      - {name: entity, type: string, meaning: "What was checked (SMARD series, gold column/table or forecast target); prefix 'TEST:' marks an injected test anomaly."}
+      - {name: ts_utc, type: timestamp, meaning: "Start of the flagged hour (UTC); for daily checks the start of the local day."}
+      - {name: value, type: double, meaning: "Observed value (entity unit; completeness: present hours; isolation_forest: anomaly score)."}
+      - {name: expected, type: double, meaning: "Expected value (seasonal median, expected hours, baseline MAE); NULL if not applicable."}
+      - {name: lower, type: double, meaning: "Lower bound of the normal range; NULL if not applicable."}
+      - {name: upper, type: double, meaning: "Upper bound of the normal range or threshold; NULL if not applicable."}
+      - {name: score, type: double, meaning: "Anomaly strength, higher = more abnormal."}
+      - {name: severity, type: string, meaning: "'critical' or 'warning'."}
+      - {name: reason, type: string, meaning: "Short human-readable explanation."}
+      - {name: detected_at, type: timestamp, meaning: "Start (UTC) of the latest detection run that flagged the row."}
+    example_questions:
+      - "Which critical anomalies were detected yesterday, and why?"
+      - "Was there forecast drift in the last week?"
+      - "Welche Zeitreihen waren gestern unvollständig?"
+
+  - name: gold_dq_daily_summary_text
+    description: "LLM-written summary of the day's data-quality anomalies. One row per detection_date."
+    columns:
+      - {name: detection_date, type: date, meaning: "Local (Europe/Berlin) day of the detection run."}
+      - {name: model, type: string, meaning: "Serving endpoint that wrote the summary."}
+      - {name: prompt, type: string, meaning: "Prompt sent to the model (long; do not select it)."}
+      - {name: prompt_chars, type: bigint, meaning: "Length of the prompt in characters."}
+      - {name: summary_text, type: string, meaning: "Generated summary of the day's data-quality anomalies."}
+      - {name: generated_at, type: timestamp, meaning: "When the summary was generated (UTC)."}
+    example_questions:
+      - "Summarise yesterday's data-quality findings."
+      - "Was gab es laut Zusammenfassung vorgestern bei der Datenqualität?"

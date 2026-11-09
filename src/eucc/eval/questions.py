@@ -62,6 +62,10 @@ class Question(BaseModel):
     # True: every expected source must be cited; False (default): any one of them is a hit.
     all_required: bool = False
     expected_tool: str | None = None
+    # The query whose result a tool answer must match (eucc.jobs.eval_agent: data_correct).
+    reference_sql: str | None = None
+    # all: every non-zero number of the reference result must be in the answer; any: one is enough.
+    data_match: Literal["all", "any"] = "all"
     key_facts: list[str] = Field(default_factory=list)
     notes: str | None = None
     reviewed: bool = False

@@ -12,11 +12,13 @@ ENTRY_POINTS = {
     "index_job": "eucc.jobs.index:main",
     "eval_retrieval_job": "eucc.jobs.eval_retrieval:main",
     "eval_rag_job": "eucc.jobs.eval_rag:main",
+    "eval_agent_job": "eucc.jobs.eval_agent:main",
 }
 JOB_FILES = {
     "build_corpus": "build_corpus.job.yml",
     "eval_retrieval": "eval_retrieval.job.yml",
     "eval_rag": "eval_rag.job.yml",
+    "eval_agent": "eval_agent.job.yml",
 }
 
 
@@ -58,11 +60,24 @@ def test_every_wheel_task_calls_a_declared_entry_point():
 
 @pytest.mark.parametrize(
     ("name", "variable"),
-    [("eval_retrieval", "retrieval_experiment"), ("eval_rag", "rag_experiment")],
+    [
+        ("eval_retrieval", "retrieval_experiment"),
+        ("eval_rag", "rag_experiment"),
+        ("eval_agent", "rag_experiment"),
+    ],
 )
 def test_eval_logs_to_the_experiment_variable(name, variable):
     params = _job(name)["tasks"][0]["python_wheel_task"]["parameters"]
     assert params[params.index("--experiment") + 1] == f"${{var.{variable}}}"
+
+
+def test_agent_eval_queries_the_warehouse_variable():
+    params = _job("eval_agent")["tasks"][0]["python_wheel_task"]["parameters"]
+    assert params[params.index("--warehouse-id") + 1] == "${var.sql_warehouse_id}"
+
+
+def test_energy_catalog_ships_in_the_package():
+    assert (REPO / "src" / "eucc" / "tools" / "energy_catalog.yaml").is_file()
 
 
 def test_index_runs_after_the_build():
@@ -98,6 +113,7 @@ def test_environment_pins_equal_the_lock_file(name):
         ("build_corpus", {"beautifulsoup4", "lxml", "databricks-vectorsearch"}),
         ("eval_retrieval", {"databricks-vectorsearch"}),
         ("eval_rag", {"mlflow-skinny", "openai", "httpx"}),
+        ("eval_agent", {"mlflow-skinny", "openai", "httpx", "langgraph", "sqlglot"}),
     ],
 )
 def test_environment_has_what_its_tasks_import(name, packages):
