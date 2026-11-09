@@ -33,6 +33,7 @@ import mlflow
 
 from eucc.chunk import OVERLAP_WORDS
 from eucc.index import INDEX_TABLE, full_name
+from eucc.parse import anchored_url
 
 DEFAULT_CATALOG = "workspace"
 DEFAULT_SCHEMA = "compliance_dev"
@@ -693,15 +694,24 @@ def generate(
 
     context_tokens: the prompt tokens of the first call, i.e. the size of the context.
     """
-    messages = build_messages(question, lang, sources)
-    text, usage = chat(messages, reasoning_effort)
+    return generate_from_messages(build_messages(question, lang, sources), reasoning_effort)
+
+
+def generate_from_messages(
+    messages: list[dict[str, str]],
+    reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+    chat_fn: Any = None,
+) -> dict[str, Any]:
+    """generate() for prepared messages (the agent builds its own); chat_fn defaults to chat."""
+    complete = chat_fn or chat  # Looked up per call, so tests can replace eucc.rag.chat.
+    text, usage = complete(messages, reasoning_effort)
     context_tokens = usage["prompt_tokens"]
     status, answer_text = parse_generation(text)
     attempts = 1
     if status == ERROR_STATUS:
         reply = [{"role": "assistant", "content": text}] if text.strip() else []
         retry = [*messages, *reply, {"role": "user", "content": RETRY_PROMPT}]
-        text, retry_usage = chat(retry, reasoning_effort)
+        text, retry_usage = complete(retry, reasoning_effort)
         usage = _add_usage(usage, retry_usage)
         status, answer_text = parse_generation(text)
         attempts = 2
@@ -757,7 +767,12 @@ def _citation(n: int, source: Source) -> dict[str, Any]:
         "article": first.article,
         "paragraph": None if source.expanded else first.paragraph,
         "heading": source.heading,
-        "source_url": first.source_url,
+        # Anchored here too: chunks indexed before the parser added anchors have the bare URL.
+        "source_url": (
+            anchored_url(first.source_url, first.unit_type, first.article)
+            if first.source_url
+            else None
+        ),
     }
 
 

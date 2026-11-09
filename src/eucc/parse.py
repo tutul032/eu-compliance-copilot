@@ -34,6 +34,8 @@ ROLE_UNITS: dict[str, frozenset[str]] = {
 ARTICLE_ID = re.compile(r"^art_(\d+[a-z]*)$")
 RECITAL_ID = re.compile(r"^rct_(\d+)$")
 ANNEX_ID = re.compile(r"^anx_([IVXLC]+)$")
+# The element id prefix of each unit in the EUR-Lex HTML, so a citation links to the provision.
+ANCHOR_PREFIX: dict[str, str] = {"article": "art", "recital": "rct", "annex": "anx"}
 OJ_PARAGRAPH_ID = re.compile(r"^\d{3}\.\d{3}$")
 # "1." in EN, "(1)" in DE. No leading quote on purpose: see the module docstring.
 PARAGRAPH_NUMBER = re.compile(r"^(?:(\d+[a-z]*)\.|\((\d+[a-z]*)\))(?:\s+|$)")
@@ -70,6 +72,17 @@ class Provision:
     text: str
     amended_by: list[str]
     source_url: str
+
+
+def anchored_url(url: str, unit_type: str, number: str | None) -> str:
+    """The document URL with the provision's anchor: #art_33, #art_4a, #rct_85, #anx_III.
+
+    Any fragment already on the URL is replaced, so applying it twice changes nothing. An
+    unknown unit type or a missing number gives the bare document URL.
+    """
+    base = url.split("#", 1)[0]
+    prefix = ANCHOR_PREFIX.get(unit_type)
+    return f"{base}#{prefix}_{number}" if prefix and number else base
 
 
 def clean_text(raw: str) -> str:
@@ -265,7 +278,7 @@ class _EntryParser:
             heading=heading,
             text=text,
             amended_by=amended_by,
-            source_url=entry.source_url,
+            source_url=anchored_url(entry.source_url, unit_type, article),
         )
 
     def articles(self) -> list[Provision]:

@@ -3,7 +3,7 @@ import re
 import pytest
 from conftest import fixture_bytes, make_entry
 
-from eucc.parse import Provision, clean_text, parse_entry
+from eucc.parse import Provision, anchored_url, clean_text, parse_entry
 
 
 def _parse(source: str, lang: str, **overrides) -> list[Provision]:
@@ -61,7 +61,7 @@ def test_row_carries_the_entry_and_the_title(lang):
     assert paragraph.revision == "000.002"
     assert paragraph.unit_type == "article"
     assert paragraph.heading == expected_title
-    assert paragraph.source_url == entry.source_url
+    assert paragraph.source_url == f"{entry.source_url}#art_43"
 
 
 def test_number_is_removed_from_the_text(lang):
@@ -278,3 +278,50 @@ def test_oj_footnote_inside_an_article_is_not_text(lang):
 
 def test_oj_has_no_amended_by(lang):
     assert all(p.amended_by == [] for p in _parse("original_dora", lang))
+
+
+URL = "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32016R0679"
+
+
+@pytest.mark.parametrize(
+    ("unit_type", "number", "expected"),
+    [
+        ("article", "33", f"{URL}#art_33"),
+        ("article", "4a", f"{URL}#art_4a"),
+        ("recital", "85", f"{URL}#rct_85"),
+        ("annex", "III", f"{URL}#anx_III"),
+        ("article", None, URL),
+        ("chapter", "1", URL),
+    ],
+)
+def test_anchored_url(unit_type, number, expected):
+    assert anchored_url(URL, unit_type, number) == expected
+
+
+def test_anchored_url_replaces_an_existing_fragment():
+    assert anchored_url(f"{URL}#art_33", "article", "34") == f"{URL}#art_34"
+    assert anchored_url(anchored_url(URL, "annex", "I"), "annex", "I") == f"{URL}#anx_I"
+
+
+@pytest.mark.parametrize(
+    ("source", "unit_type", "prefix"),
+    [
+        ("consolidated_aia", "article", "art"),
+        ("consolidated_aia", "annex", "anx"),
+        ("original_gdpr", "recital", "rct"),
+        ("original_dora", "recital", "rct"),
+    ],
+)
+def test_every_provision_links_to_its_anchor_in_the_document(source, unit_type, prefix, lang):
+    entry = make_entry(source, lang)
+    provisions = [p for p in _parse(source, lang) if p.unit_type == unit_type]
+    assert provisions
+    for p in provisions:
+        assert p.source_url == f"{entry.source_url}#{prefix}_{p.article}"
+        # The anchor is an element id of the fixture, so the link lands on the provision.
+        assert f'id="{prefix}_{p.article}"' in fixture_bytes(source, lang).decode("utf-8")
+
+
+def test_inserted_article_anchor_keeps_its_letter(lang):
+    provisions = _article(_parse("consolidated_aia", lang), "4a")
+    assert provisions and all(p.source_url.endswith("#art_4a") for p in provisions)

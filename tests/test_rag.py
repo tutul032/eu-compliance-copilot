@@ -263,9 +263,24 @@ def test_check_citations_maps_numbers_to_sources_in_order_of_use():
         "article": "19",
         "paragraph": None,
         "heading": "Notification",
-        "source_url": "https://eur-lex.europa.eu/x",
+        "source_url": "https://eur-lex.europa.eu/x#art_19",  # Anchored at citation time.
     }
     assert invalid == []
+
+
+@pytest.mark.parametrize(
+    ("unit_type", "article", "url", "expected"),
+    [
+        ("article", "33", "https://e.eu/doc", "https://e.eu/doc#art_33"),
+        ("annex", "III", "https://e.eu/doc", "https://e.eu/doc#anx_III"),
+        ("article", "33", "https://e.eu/doc#art_33", "https://e.eu/doc#art_33"),  # Indexed with it.
+    ],
+)
+def test_citation_url_carries_the_provision_anchor(unit_type, article, url, expected):
+    source = rag.Source.single(
+        rag.Chunk("c", "GDPR", "en", unit_type, article, None, None, url, "h\nbody", 1.0)
+    )
+    assert rag._citation(1, source)["source_url"] == expected
 
 
 @pytest.mark.parametrize(

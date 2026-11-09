@@ -1,0 +1,43 @@
+# Agent eval: all 40 questions of eval/questions.yaml (shipped in the wheel) go through eucc.agent
+# (router, chunks_idx, the energy SQL tool on ${var.sql_warehouse_id}, databricks-gpt-oss-120b).
+# Logged to ${var.rag_experiment} as run agent_medium, next to rag_medium: route_correct,
+# data_correct (numbers vs. each tool question's reference_sql), the eval_rag metrics and the
+# answers' traces. Run after build_corpus: `databricks bundle run eval_agent -t <target> -p free`.
+# The run identity needs SELECT on workspace.energy_prod (Project 1, read-only) and CAN USE on the
+# warehouse. Serverless, no Spark needed.
+resources:
+  jobs:
+    eval_agent:
+      name: eval_agent
+      max_concurrent_runs: 1
+      # 40 questions at ~10-30 s (router, retrieval and/or SQL, answer), plus the judge.
+      timeout_seconds: 5400
+      environments:
+        # As eval_rag, plus the agent's graph (langgraph) and the SQL validator (sqlglot). The pins
+        # equal uv.lock (tests/test_job_environments.py).
+        - environment_key: eucc
+          spec:
+            environment_version: "5"
+            dependencies:
+              - ../dist/*.whl
+              - mlflow-skinny==3.18.0
+              - openai==3.46.0
+              - httpx==0.28.1
+              - langgraph==1.2.20
+              - sqlglot==30.30.0
+      tasks:
+        - task_key: eval_agent
+          environment_key: eucc
+          max_retries: 0
+          python_wheel_task:
+            package_name: eucc
+            entry_point: eval_agent_job
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+              - --experiment
+              - ${var.rag_experiment}
+              - --warehouse-id
+              - ${var.sql_warehouse_id}

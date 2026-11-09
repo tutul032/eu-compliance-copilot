@@ -6,6 +6,11 @@
 #    key_facts: ["2 December 2027 for Annex III / Art. 6(2) systems", "2 August 2028 for Annex I / Art. 6(1) systems", "originally 2 August 2026"]
 #    notes: "Consolidated text 02024R1689-20260727 includes Reg. 2026/1744 (M1)."
 #   key_facts: facts the answer must contain (graded by LLM judge + spot check)
+#   reference_sql: tool questions only; the query whose result the agent's numbers must match
+#     (eval_agent: data_correct). Relative dates use the warehouse's current_date() (UTC);
+#     "yesterday" is current_date() - 1, "the last 7 days" the 7 issue days up to yesterday.
+#   data_match: all (default) | any — the answer must contain every non-zero number of the
+#     reference result, or at least one of them (several valid ways to state the answer).
 #   reviewed: set to true after checking against the EUR-Lex text yourself (discovery task)
 # Regulations: GDPR = 32016R0679, AIA = 32024R1689 (as amended by 2026/1744), DORA = 32022R2554
 
@@ -316,6 +321,10 @@ questions:
     question: "What was the average DE-LU day-ahead price yesterday?"
     expected_behavior: tool
     expected_tool: sql
+    reference_sql: |
+      SELECT date_local, ROUND(price_avg_eur_mwh, 2) AS price_avg_eur_mwh
+      FROM workspace.energy_prod.gold_energy_daily
+      WHERE date_local = current_date() - 1
     key_facts: ["number in EUR/MWh from energy_prod", "date stated"]
     notes: "Table/column names fixed in Sprint 3; grader compares with direct SQL result."
     reviewed: true
@@ -326,6 +335,11 @@ questions:
     question: "How did the load forecast MAPE develop over the last 7 days?"
     expected_behavior: tool
     expected_tool: sql
+    reference_sql: |
+      SELECT issue_date, ROUND(mape, 2) AS mape_pct
+      FROM workspace.energy_prod.gold_forecast_accuracy
+      WHERE target = 'total_load_mwh' AND issue_date BETWEEN current_date() - 7 AND current_date() - 1
+      ORDER BY issue_date
     key_facts: ["daily MAPE values", "plausible range (single-digit %)"]
     reviewed: true
 
@@ -335,6 +349,11 @@ questions:
     question: "Gab es gestern Auffälligkeiten bei den Datenqualitätsprüfungen?"
     expected_behavior: tool
     expected_tool: sql
+    reference_sql: |
+      SELECT check_name, severity, n
+      FROM workspace.energy_prod.gold_dq_daily_summary
+      WHERE detection_date = current_date() - 1 AND n > 0
+      ORDER BY n DESC
     key_facts: ["result of yesterday's DQ checks", "answer in German"]
     reviewed: true
 
@@ -344,6 +363,14 @@ questions:
     question: "Our day-ahead load forecast supports grid operations. Could it be high-risk under the AI Act, and what is its current error?"
     expected_behavior: answer+tool
     expected_tool: sql
+    reference_sql: |
+      SELECT issue_date, ROUND(mae, 2) AS mae_mwh, ROUND(mape, 2) AS mape_pct
+      FROM workspace.energy_prod.gold_forecast_accuracy
+      WHERE target = 'total_load_mwh' AND mape IS NOT NULL
+      ORDER BY issue_date DESC
+      LIMIT 1
+    # "Its current error" can be stated as MAE or as MAPE: either number is correct.
+    data_match: any
     expected_sources: [{reg: AIA, annex: "III"}, {reg: AIA, article: "6"}]
     key_facts: ["Annex III point 2 analysis", "Art. 6(3) derogation", "current MAPE from SQL tool"]
     reviewed: true
