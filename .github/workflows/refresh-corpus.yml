@@ -1,0 +1,52 @@
+name: refresh-corpus
+
+# Refresh the corpus of staging or prod as the CI/CD service principal (sp-eucc-cicd):
+# deploy the bundle (creates the raw volume on the first run), download the corpus from Cellar and
+# upload it to the target's raw volume (only documents that pass validation and match
+# corpus/manifest.lock.json), then run build_corpus, which rebuilds silver_provisions and
+# gold_chunks and syncs compliance_<target>.chunks_idx on eucc-vs. Runbook: docs/runbook.md.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Bundle target to refresh
+        type: choice
+        options: [staging, prod]
+        default: staging
+
+permissions:
+  contents: read
+
+# One refresh per target at a time; a second dispatch waits instead of uploading mid-build.
+concurrency:
+  group: refresh-corpus-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    # Deploy and extract take minutes; build_corpus allows up to 60 (resources/build_corpus.job.yml).
+    timeout-minutes: 90
+    env:
+      TARGET: ${{ inputs.target }}
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked
+      - uses: databricks/setup-cli@v1.23.0
+      - name: Deploy bundle
+        run: databricks bundle deploy -t "$TARGET"
+      # No --write-lock: a document whose hash differs from the lock file fails the step (exit 1)
+      # before build_corpus runs. Accepting a source change is a reviewed PR to the lock file.
+      - name: Extract and upload corpus
+        run: >-
+          uv run python -m eucc.extract
+          --out data/raw
+          --upload-to "/Volumes/workspace/compliance_${TARGET}/raw/eurlex"
+      - name: Run build_corpus
+        run: databricks bundle run build_corpus -t "$TARGET"

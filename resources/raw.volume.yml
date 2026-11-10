@@ -1,0 +1,28 @@
+# The raw volume of staging and prod: holds the EUR-Lex/Cellar XHTML that eucc.extract
+# --upload-to writes under eurlex/ and build_corpus reads (/Volumes/<catalog>/<schema>/raw/eurlex).
+# Created by the bundle, deployed as sp-eucc-cicd, so the SP owns it, as it owns the schema
+# (ADR-0003); the user identity cannot create volumes in SP-owned schemas. dev keeps the volume
+# managed in infra/terraform/volumes.tf, so it is not defined here.
+#
+# A managed volume: destroying the bundle or removing this resource deletes the files. They come
+# back from Cellar with the refresh-corpus workflow (docs/runbook.md).
+targets:
+  staging:
+    resources:
+      volumes:
+        raw:
+          catalog_name: ${var.catalog}
+          schema_name: ${var.schema}
+          name: raw
+          volume_type: MANAGED
+          comment: Raw EUR-Lex/Cellar XHTML from eucc.extract (lock-checked); input of build_corpus.
+
+  prod:
+    resources:
+      volumes:
+        raw:
+          catalog_name: ${var.catalog}
+          schema_name: ${var.schema}
+          name: raw
+          volume_type: MANAGED
+          comment: Raw EUR-Lex/Cellar XHTML from eucc.extract (lock-checked); input of build_corpus.
