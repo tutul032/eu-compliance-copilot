@@ -1,0 +1,37 @@
+# The Streamlit app (app/app.py) as a Databricks App. Dev target only for now: deploy with
+# `databricks bundle deploy -t dev -p free`, then start it with `databricks bundle run eucc_app -t dev -p free`.
+#
+# The app runs as its own service principal. The resources below grant it CAN_QUERY on the two
+# serving endpoints and CAN_USE on the warehouse, and app.yaml reads their names/id from them
+# (valueFrom). Its Unity Catalog read grants (catalog, schemas, chunks_idx, the energy tables,
+# the artifacts volume) are managed in infra/terraform/app.tf.
+#
+# Packaging: app/uv-requirements.txt installs the eucc wheel from the artifacts volume, as the
+# Apps docs describe (the volume as an app resource, the full path hard-coded). The bundle does
+# not build or upload it: scripts/publish_app_wheel.ps1 does, before a deploy that needs new code.
+targets:
+  dev:
+    resources:
+      apps:
+        eucc_app:
+          name: eucc-copilot
+          description: EU Compliance Copilot - GDPR, AI Act and DORA with the energy data.
+          source_code_path: ../app
+          resources:
+            - name: llm-endpoint
+              serving_endpoint:
+                name: databricks-gpt-oss-120b
+                permission: CAN_QUERY
+            - name: embedding-endpoint
+              serving_endpoint:
+                name: databricks-qwen3-embedding-0-6b
+                permission: CAN_QUERY
+            - name: sql-warehouse
+              sql_warehouse:
+                id: ${var.sql_warehouse_id}
+                permission: CAN_USE
+            - name: artifacts-volume
+              uc_securable:
+                securable_type: VOLUME
+                securable_full_name: ${var.catalog}.${var.schema}.artifacts
+                permission: READ_VOLUME

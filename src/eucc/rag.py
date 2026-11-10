@@ -338,10 +338,18 @@ def _query(index_name: str, question: str, filters: dict[str, Any], k: int) -> l
 
 @mlflow.trace(span_type="RETRIEVER")
 def retrieve(
-    question: str, lang: str, *, catalog: str = DEFAULT_CATALOG, schema: str = DEFAULT_SCHEMA
+    question: str,
+    lang: str,
+    *,
+    catalog: str = DEFAULT_CATALOG,
+    schema: str = DEFAULT_SCHEMA,
+    index: str | None = None,
 ) -> list[Chunk]:
-    """Top 10 articles/annexes in the question's language; per-regulation top 5 if 2+ are named."""
-    index_name = full_name(catalog, schema, INDEX_TABLE)
+    """Top 10 articles/annexes in the question's language; per-regulation top 5 if 2+ are named.
+
+    index (a full name) overrides catalog.schema.chunks_idx.
+    """
+    index_name = index or full_name(catalog, schema, INDEX_TABLE)
     filters: dict[str, Any] = {"lang": lang, "unit_type": UNIT_TYPES}
     chunks = _query(index_name, question, filters, NUM_RESULTS)
     regulations = detect_regulations(question)
@@ -575,9 +583,10 @@ def expand(
     *,
     catalog: str = DEFAULT_CATALOG,
     schema: str = DEFAULT_SCHEMA,
+    index: str | None = None,
 ) -> list[Source]:
     """Fetch every chunk of the top 3 articles (one filtered query each, in parallel)."""
-    index_name = full_name(catalog, schema, INDEX_TABLE)
+    index_name = index or full_name(catalog, schema, INDEX_TABLE)
     keys = top_articles(chunks)
 
     def fetch(key: ArticleKey) -> list[Chunk]:
@@ -661,16 +670,19 @@ def _openai_client() -> Any:
 
 
 def chat(
-    messages: list[dict[str, str]], reasoning_effort: str = DEFAULT_REASONING_EFFORT
+    messages: list[dict[str, str]],
+    reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+    *,
+    model: str = MODEL,
 ) -> tuple[str, dict[str, int]]:
-    """One completion from MODEL at temperature 0: (text parts only, token usage).
+    """One completion from model (a serving endpoint) at temperature 0: (text parts, usage).
 
     reasoning_effort goes to gpt-oss as the OpenAI parameter of that name (checked against the
     endpoint: low spends fewer completion tokens than medium; an unknown value is a 400).
     max_tokens covers reasoning and answer.
     """
     response = _openai_client().chat.completions.create(
-        model=MODEL,
+        model=model,
         messages=messages,
         temperature=TEMPERATURE,
         max_tokens=MAX_TOKENS,

@@ -1,0 +1,23 @@
+# Databricks Apps runtime config. The env is read by eucc.ui.AppConfig; locally nothing is set
+# and the same values are the library defaults.
+command: ["streamlit", "run", "app.py"]
+
+env:
+  - name: EUCC_CATALOG
+    value: workspace
+  - name: EUCC_SCHEMA
+    value: compliance_dev
+  - name: EUCC_INDEX
+    value: workspace.compliance_dev.chunks_idx
+  # Resource keys of resources/eucc_app.app.yml: the endpoint's name, the warehouse's id.
+  - name: EUCC_LLM_ENDPOINT
+    valueFrom: llm-endpoint
+  - name: EUCC_EMBEDDING_ENDPOINT
+    valueFrom: embedding-endpoint
+  - name: EUCC_SQL_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  # The app's service principal has no permission on an MLflow experiment.
+  - name: EUCC_TRACING
+    value: "0"
+  - name: MLFLOW_DISABLE_AGENT_HINT
+    value: "1"

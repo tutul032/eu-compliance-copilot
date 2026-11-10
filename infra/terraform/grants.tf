@@ -3,7 +3,8 @@
 # Project 1's Terraform state, so databricks_grants (plural, authoritative for every principal on
 # a securable) must never be used here: it would revoke Project 1's grants. Not managed here (see
 # docs/adr/0003-identity-and-ownership.md): the _workspace_users catalog grant, Project 1's
-# grants, all table grants, bundle resources.
+# grants, table grants (except the app service principal's read grants in app.tf), bundle
+# resources.
 resource "databricks_grant" "catalog_use" {
   catalog    = var.catalog
   principal  = databricks_service_principal.cicd.application_id

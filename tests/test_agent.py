@@ -254,11 +254,11 @@ def test_search_uses_both_queries_then_merges_and_dedupes(monkeypatch):
     }
     retrieved, expanded = [], []
 
-    def retrieve(query, lang, *, catalog, schema):
+    def retrieve(query, lang, *, catalog, schema, index):
         retrieved.append((query, lang))
         return rankings[query]
 
-    def expand(question, chunks, regulations, *, catalog, schema):
+    def expand(question, chunks, regulations, *, catalog, schema, index):
         expanded.append((question, [c.chunk_id for c in chunks], regulations))
         return SOURCES
 
@@ -322,3 +322,46 @@ def test_router_prompt_requires_legal_terms_without_guessed_numbers():
     # The worked example follows the rule: its question names no number, so neither does the query.
     example = prompt[prompt.index("Example:") : prompt.index("If needs_regulation is false")]
     assert not re.search(r"\b(Article|Art\.|Annex)\s+[\dIVX]", example)
+
+
+def test_default_deps_wire_the_overrides_into_every_tool(monkeypatch):
+    calls: dict[str, object] = {}
+
+    def fake_chat(messages, reasoning_effort="medium", *, model=rag.MODEL):
+        calls.setdefault("models", []).append(model)
+        return '{"sql": "SELECT 1"}', {}
+
+    def fake_retrieve(question, lang, **where):
+        calls["retrieve"] = where
+        return []
+
+    def fake_expand(question, chunks, regulations, **where):
+        calls["expand"] = where
+        return []
+
+    def fake_run_sql(sql, *, client=None, warehouse=None):
+        calls["warehouse"] = warehouse
+        return {"columns": ["x"], "types": ["INT"], "rows": [[1]]}
+
+    monkeypatch.setattr(rag, "chat", fake_chat)
+    monkeypatch.setattr(rag, "retrieve", fake_retrieve)
+    monkeypatch.setattr(rag, "expand", fake_expand)
+    monkeypatch.setattr(agent.sql_tool, "run_sql", fake_run_sql)
+    monkeypatch.setattr(agent.sql_tool, "validate_sql", lambda sql, allowed: sql)
+
+    deps = agent.default_deps(schema="s", index="c.s.idx", model="llm", warehouse="w")
+    deps.chat([{"role": "user", "content": "q"}], "low")
+    deps.search("GDPR?", "en", None)
+    deps.query("price?")
+
+    assert calls["models"] == ["llm", "llm"]  # The answer's and the SQL tool's model.
+    assert calls["retrieve"] == {"catalog": "workspace", "schema": "s", "index": "c.s.idx"}
+    assert calls["expand"] == calls["retrieve"]
+    assert calls["warehouse"] == "w"
+
+
+def test_default_deps_without_overrides_use_the_library_defaults():
+    deps = agent.default_deps()
+    assert deps.chat is rag.chat
+    assert deps.search.keywords["index"] is None
+    assert deps.query.keywords["run"].keywords == {"warehouse": None}

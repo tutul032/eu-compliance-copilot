@@ -169,13 +169,27 @@ def default_deps(
     catalog: str = rag.DEFAULT_CATALOG,
     schema: str = rag.DEFAULT_SCHEMA,
     reasoning_effort: str = rag.DEFAULT_REASONING_EFFORT,
+    index: str | None = None,
+    model: str = rag.MODEL,
+    warehouse: str | None = None,
 ) -> AgentDeps:
-    """The real tools: chunks_idx in catalog.schema, gpt-oss, the energy SQL warehouse."""
+    """The real tools: chunks_idx in catalog.schema, gpt-oss, the energy SQL warehouse.
+
+    index (a full name), model (a chat serving endpoint) and warehouse (an id) override the
+    defaults; the app sets them from its resources. The SQL tool writes its SQL with the same
+    model.
+    """
     energy_catalog = sql_tool.load_catalog()
+    chat: ChatFn = rag.chat if model == rag.MODEL else functools.partial(rag.chat, model=model)
     return AgentDeps(
-        chat=rag.chat,
-        search=functools.partial(search_regulation, catalog=catalog, schema=schema),
-        query=functools.partial(sql_tool.query, catalog=energy_catalog),
+        chat=chat,
+        search=functools.partial(search_regulation, catalog=catalog, schema=schema, index=index),
+        query=functools.partial(
+            sql_tool.query,
+            catalog=energy_catalog,
+            generate=functools.partial(sql_tool.generate_sql, chat=chat),
+            run=functools.partial(sql_tool.run_sql, warehouse=warehouse),
+        ),
         reasoning_effort=reasoning_effort,
     )
 
@@ -216,17 +230,20 @@ def search_regulation(
     *,
     catalog: str = rag.DEFAULT_CATALOG,
     schema: str = rag.DEFAULT_SCHEMA,
+    index: str | None = None,
 ) -> list[rag.Source]:
     """Retrieve with the question and with regulation_query, interleave, expand (small-to-big).
 
     Both queries filter on the question's language. The regulations named in either query get
-    a reserved source each (rag.assemble_sources).
+    a reserved source each (rag.assemble_sources). index (a full name) overrides
+    catalog.schema.chunks_idx.
     """
+    where = {"catalog": catalog, "schema": schema, "index": index}
     queries = search_queries(question, regulation_query)
-    rankings = [rag.retrieve(q, lang, catalog=catalog, schema=schema) for q in queries]
+    rankings = [rag.retrieve(q, lang, **where) for q in queries]
     chunks = rankings[0] if len(rankings) == 1 else interleave(rankings, SEARCH_KEEP)
     regulations = list(dict.fromkeys(r for q in queries for r in rag.detect_regulations(q)))
-    return rag.expand(question, chunks, regulations, catalog=catalog, schema=schema)
+    return rag.expand(question, chunks, regulations, **where)
 
 
 # ---------------------------------------------------------------- routing
