@@ -151,12 +151,7 @@ def show_warmup(state: Warmup, lang: str) -> None:
 
 # ---------------------------------------------------------------- page
 
-# The sidebar holds the disclaimer: open by default, so it is always on screen (and in screenshots).
-st.set_page_config(
-    page_title="EU Compliance Copilot",
-    page_icon=":material/gavel:",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="EU Compliance Copilot", page_icon=":material/gavel:")
 st.session_state.setdefault("history", [])
 st.session_state.setdefault("ui_lang", ui.DEFAULT_UI_LANG)
 
@@ -197,8 +192,11 @@ if question:
             st.error(ui.text(lang, "failed", error=entry["error"]))
     st.session_state["history"].append(entry)
 
+# Footer of the main page (not the sidebar, which can be collapsed): on screen on every rerun.
+st.divider()
+st.caption(f":material/gavel: {ui.text(lang, 'disclaimer')}")
+
 with st.sidebar:
-    st.warning(ui.text(lang, "disclaimer"), icon=":material/gavel:")
     st.caption(
         ui.text(
             lang,

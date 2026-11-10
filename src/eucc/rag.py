@@ -125,6 +125,8 @@ Rules:
 the sources do not state. If the sources leave something open (for example, time limits set in \
 delegated acts), say so instead of guessing.
 2. Cite every statement with its source number in square brackets, e.g. [1] or [2][3]. Cite only \
+in the form [n]: name paragraphs, points or annexes in the text, e.g. "Art. 19(3) requires ... \
+[2]", never inside or right after the brackets (not [2]§3, [2](3) or [2, para. 3]). Cite only \
 numbers that appear in the sources.
 3. Answer in the language of the question.
 4. If the question rests on a false premise, correct it from the sources.

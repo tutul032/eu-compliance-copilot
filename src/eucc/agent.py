@@ -109,7 +109,9 @@ or figures that they do not state. If the sources leave something open (for exam
 set in delegated acts), say so instead of guessing.
 2. Cite every legal statement with its source number in square brackets, e.g. [1] or [2][3]. Cite \
 every figure from the data with its row label, e.g. [D1] or [D2][D3]. Data rows are never a legal \
-source: a statement about the law needs an [n] citation. Cite only labels that appear.
+source: a statement about the law needs an [n] citation. Cite only in the form [n] or [Dn]: name \
+paragraphs, points or annexes in the text, e.g. "Art. 19(3) requires ... [2]", never inside or \
+right after the brackets (not [2]§3, [2](3) or [2, para. 3]). Cite only labels that appear.
 3. Give figures with their unit (EUR/MWh, MWh, %) and the date they refer to, rounded to 1 or 2 \
 decimals; MAPE values are already percentages. If the data tool failed or returned no rows, say \
 that the data is not available; never invent figures.

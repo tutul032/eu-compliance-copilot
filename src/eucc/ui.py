@@ -45,9 +45,8 @@ TEXTS: dict[str, dict[str, str]] = {
         "failed": "The question could not be answered: {error}",
         "about": "Model {llm} · embeddings {embedding} · index {index}",
         "disclaimer": (
-            "Information only, not legal advice. Answers come from the GDPR, the AI Act and "
-            "DORA as published on EUR-Lex and may be incomplete or wrong; check the cited "
-            "provisions and consult a qualified lawyer for decisions."
+            "Not legal advice. Sources: EUR-Lex — AI Act consolidated 27.07.2026, GDPR "
+            "consolidated 04.05.2016, DORA OJ L 333/2022. Energy data: Project 1 (energy_prod)."
         ),
     },
     "de": {
@@ -79,10 +78,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "failed": "Die Frage konnte nicht beantwortet werden: {error}",
         "about": "Modell {llm} · Embeddings {embedding} · Index {index}",
         "disclaimer": (
-            "Nur zur Information, keine Rechtsberatung. Die Antworten beruhen auf DSGVO, "
-            "KI-Verordnung und DORA in der auf EUR-Lex veröffentlichten Fassung und können "
-            "unvollständig oder falsch sein; prüfen Sie die zitierten Vorschriften und ziehen Sie "
-            "für Entscheidungen eine qualifizierte Anwältin oder einen qualifizierten Anwalt hinzu."
+            "Keine Rechtsberatung. Quellen: EUR-Lex — KI-Verordnung konsolidiert 27.07.2026, "
+            "DSGVO konsolidiert 04.05.2016, DORA ABl. L 333/2022. Energiedaten: Projekt 1 "
+            "(energy_prod)."
         ),
     },
 }

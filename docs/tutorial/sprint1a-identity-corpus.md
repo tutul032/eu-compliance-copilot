@@ -297,10 +297,10 @@ terraform plan -out=tfplan -input=false
 **Expected:** `Plan: 3 to add, 0 to change, 0 to destroy.` PR (`refs #6`), merge, apply from master:
 
 ```bash
-for s in dev staging prod; do databricks volumes list workspace compliance_$s | grep raw; done
+for s in dev staging prod; do echo "== $s"; databricks volumes list workspace compliance_$s; done
 ```
 
-**Expected:** three lines `raw`.
+**Expected (corrected 2026-11-10):** `raw` in **dev only**. The staging and prod creations fail: those schemas are owned by `sp-eucc-cicd`, and your user cannot create volumes in them. In our run this went unnoticed (only dev was checked) and surfaced in step 5 as two unexpected `raw` creations in a plan. Read the **whole** apply output — partial failures print `Error:` lines above the summary. Fix used: `raw` for `["dev"]` only; staging/prod volumes are created in step 6 by the CI identity.
 
 ### Step 13 — Find a download channel
 
@@ -430,6 +430,7 @@ Scope decision: the planned extractor container and scheduled GitHub workflow mo
 | EUR-Lex returns `202`, 0 bytes | Bot challenge on the website | Use Cellar: `publications.europa.eu/resource/celex/<CELEX>` with `Accept` + `Accept-Language` |
 | `found 4 articles, expected 7` (Omnibus) | Manual count included quoted amendment text | Trust ELI-id counts; fix manifest and spike |
 | `Copy-Item … Downloads\… does not exist` | Download still in progress | Wait and retry |
+| Volumes missing in staging/prod although the plan showed 3 to add | Your user cannot create volumes in SP-owned schemas; the partial apply errors were overlooked | Check every environment after apply; create in SP-owned schemas with the SP (step 6) |
 | `GH013: Repository rule violations … Changes must be made through a pull request` | Committed on local `master` after the feature branch was merged and deleted | `git branch <new>`, `git switch <new>`, `git branch -f master origin/master`, then push the branch and open a PR |
 
 ## What you learned
