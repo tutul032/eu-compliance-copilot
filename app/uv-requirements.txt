@@ -1,0 +1,4 @@
+# The eucc package, from the artifacts volume (infra/terraform/app.tf; the volume is an app
+# resource in resources/eucc_app.app.yml). Uploaded by scripts/publish_app_wheel.ps1. The Apps
+# runtime does not expand variables here, so the path is hard-coded.
+/Volumes/workspace/compliance_dev/artifacts/eucc-0.0.1-py3-none-any.whl

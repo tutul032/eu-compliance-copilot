@@ -814,3 +814,19 @@ def test_answer_passes_the_reasoning_effort_and_rejects_others(workspace):
     assert create.call_args.kwargs["reasoning_effort"] == "low"
     with pytest.raises(ValueError):
         rag.answer("Q?", reasoning_effort="high")
+
+
+def test_retrieve_and_expand_query_the_index_override(workspace):
+    workspace.vector_search_indexes.query_index.return_value = _response(para("GDPR", "33", "1"))
+    chunks = rag.retrieve("Breach notification?", "en", index="c.s.other_idx")
+    rag.expand("Breach notification?", chunks, [], index="c.s.other_idx")
+    names = {c.kwargs["index_name"] for c in workspace.vector_search_indexes.query_index.mock_calls}
+    assert names == {"c.s.other_idx"}
+
+
+def test_chat_sends_the_model_override(workspace):
+    workspace.openai.chat.completions.create.return_value = _completion("{}")
+    rag.chat([{"role": "user", "content": "q"}], "low", model="other-endpoint")
+    rag.chat([{"role": "user", "content": "q"}], "low")
+    models = [c.kwargs["model"] for c in workspace.openai.chat.completions.create.call_args_list]
+    assert models == ["other-endpoint", rag.MODEL]
