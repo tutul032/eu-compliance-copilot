@@ -39,8 +39,8 @@ def test_placeholders_match_between_languages():
 def test_texts_are_in_their_language():
     assert ui.text("en", "examples") == "Example questions"
     assert ui.text("de", "examples") == "Beispielfragen"
-    assert "keine Rechtsberatung" in ui.text("de", "disclaimer")
-    assert "not legal advice" in ui.text("en", "disclaimer")
+    assert "Keine Rechtsberatung" in ui.text("de", "disclaimer")
+    assert "Not legal advice" in ui.text("en", "disclaimer")
 
 
 def test_text_fills_placeholders():
