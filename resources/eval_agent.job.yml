@@ -52,7 +52,12 @@ resources:
       tasks:
         - task_key: eval_agent
           environment_key: eucc
+          # Exactly one eval per run. On serverless, auto-optimization retries a failed task even with
+          # max_retries: 0 (the API stores 0 as unset): a staging run failed on key_facts=0.792, was
+          # retried 3 s later, scored 0.866 and passed. disable_auto_optimization turns that off.
           max_retries: 0
+          retry_on_timeout: false
+          disable_auto_optimization: true
           python_wheel_task:
             package_name: eucc
             entry_point: eval_agent_job
@@ -81,3 +86,6 @@ resources:
               - "{{job.parameters.min_key_facts}}"
               - --max-errors
               - "{{job.parameters.max_errors}}"
+              # The same for every attempt of a run: a retry reuses a finished eval.
+              - --job-run-id
+              - "{{job.run_id}}"

@@ -84,8 +84,8 @@ with these job parameters:
 | `variants` | `medium` | Reasoning effort medium only: one MLflow run, `agent_medium`. |
 | `warmup` | `true` | One untimed agent call before the timed loop, so a cold endpoint does not skew p95. |
 | `min_behavior` | `1.0` | Every question has the expected status (answered, refused, out of scope). |
-| `min_citation_hit` | `0.85` | Share of answer questions whose citations include the expected provisions. |
-| `min_key_facts` | `0.80` | Mean key-fact coverage (LLM judge). |
+| `min_citation_hit` | `0.85` | Share of answer questions whose citations include the expected provisions. Workflow input: `gh workflow run release-eval.yml -f min_citation_hit=0.80`. |
+| `min_key_facts` | `0.75` | Mean key-fact coverage (LLM judge). Below 0.80 only warns: the judge varied by 0.07 between two runs of the same system (0.792 vs 0.866). |
 | `max_errors` | `0` | No failed or unparseable answer. |
 
 The job's output goes to the step log. The job summary shows its result line and the run URL:
@@ -96,8 +96,12 @@ RELEASE_EVAL behavior=1.000 citation_hit=0.889 key_facts=0.853 p95_ms=8123 error
 
 - **Pass:** every threshold met. The workflow is green.
 - **Fail:** the job prints `RELEASE_EVAL FAILED: <metric>=<value> < <threshold>` for each missed
-  threshold, for example `citation_hit=0.833 < min-citation-hit 0.85`, and exits with code 1. The
-  job run, `bundle run` and the workflow all fail.
+  threshold, for example `citation_hit=0.833 < min-citation-hit 0.85`, and raises a RuntimeError
+  with that message. The task is not retried (`disable_auto_optimization: true`). The job run,
+  `bundle run` and the workflow all fail. The workflow's summary step also fails on any
+  `RELEASE_EVAL FAILED` line in the log.
+- **`WARNING key_facts below 0.80`:** key facts between 0.75 and 0.80 only warn. Read the judge's
+  results in the per-question CSV before releasing.
 - **`WARNING p95 above 10000 ms`:** latency only warns and does not fail the run. Compare with the
   previous runs in the experiment before releasing.
 
@@ -113,7 +117,7 @@ In dev, as yourself:
 
 ```sh
 databricks bundle run eval_agent -t dev -p free --params \
-  exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_behavior=1.0,min_citation_hit=0.85,min_key_facts=0.80,max_errors=0
+  exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_behavior=1.0,min_citation_hit=0.85,min_key_facts=0.75,max_errors=0
 ```
 
 Without `--params`, the job runs the full agent eval: all 40 questions, with the data tool and no

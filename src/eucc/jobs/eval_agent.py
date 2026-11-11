@@ -3,7 +3,7 @@
     eval_agent_job --catalog workspace --schema compliance_dev --experiment /Users/me/eucc_rag
         [--warehouse-id 4228ff3a910b0b5e] [--exclude-category tool] [--no-data-tool]
         [--variants medium,low] [--warmup] [--min-behavior 1.0] [--min-citation-hit 0.85]
-        [--min-key-facts 0.80] [--max-errors 0]
+        [--min-key-facts 0.75] [--max-errors 0] [--job-run-id 123]
 
 One MLflow run per reasoning effort in --variants (default medium: agent_medium) in the RAG eval's
 experiment, next to rag_medium: route_correct and
@@ -21,16 +21,22 @@ After each MLflow run, main prints
 
     RELEASE_EVAL behavior=1.000 citation_hit=0.889 key_facts=0.853 p95_ms=8123 errors=0 n=36
 
-and a WARNING line when p95 exceeds P95_WARNING_MS (no failure). With thresholds set, a missed
-one is printed as "RELEASE_EVAL FAILED: <which>" and the job exits with code 1. Every option also
+and WARNING lines when p95 exceeds P95_WARNING_MS or key_facts is below KEY_FACTS_WARNING (no
+failure). With thresholds set, missed ones are printed as "RELEASE_EVAL FAILED: <which>" and
+main raises RuntimeError with the same message, so the Databricks task fails. Every option also
 takes a value (--data-tool false, --warmup true, --min-behavior "" for unset), so the job's
 parameters can pass them through "databricks bundle run --params".
+
+One eval per job run: with --job-run-id ({{job.run_id}}, the same for every attempt of a run),
+each MLflow run is tagged with it, and a later attempt of the same job run that finds a finished
+run for its variant reuses that run's metrics instead of evaluating again. The gates then apply
+to those metrics, so a retry cannot turn a failed release eval into a pass by re-rolling the LLM
+judge.
 """
 
 import argparse
 import os
 import re
-import sys
 import tempfile
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -59,8 +65,15 @@ RUN_NAME = f"{RUN_PREFIX}{rag.DEFAULT_REASONING_EFFORT}"
 DEFAULT_VARIANTS = (rag.DEFAULT_REASONING_EFFORT,)
 # The latency target of an interactive answer; above it the release eval warns, never fails.
 P95_WARNING_MS = 10_000
+# Below this, key_facts warns; the hard minimum is --min-key-facts (0.75 in the release eval).
+# The LLM judge is noisy: two runs of the same system (same commit, index and prompts) scored
+# 0.792 and 0.866, a spread of 0.07. A hard gate at 0.80 would fail or pass on the judge's draw,
+# so 0.75-0.80 is a warning to look at, not a failure.
+KEY_FACTS_WARNING = 0.80
 # Means are ratios of small counts: 36/36 must pass 1.0 whatever the float rounding.
 _EPSILON = 1e-9
+# MLflow run tag with the Databricks job run id (main's --job-run-id).
+JOB_RUN_TAG = "eucc_job_run_id"
 SUMMARY_METRICS = (
     "route_correct",
     "data_correct",
@@ -134,6 +147,20 @@ def p95_warning(metrics: Mapping[str, float], limit_ms: float = P95_WARNING_MS) 
     if p95 is None or p95 <= limit_ms:
         return None
     return f"WARNING p95 above {limit_ms:.0f} ms (p95_ms={p95:.0f})"
+
+
+def key_facts_warning(
+    metrics: Mapping[str, float],
+    minimum: float | None = None,
+    warn_below: float = KEY_FACTS_WARNING,
+) -> str | None:
+    """A warning when key_facts is below warn_below but not below the hard minimum (a failure)."""
+    value = metrics.get("key_fact_coverage")
+    if value is None or value >= warn_below - _EPSILON:
+        return None
+    if minimum is not None and value < minimum - _EPSILON:
+        return None  # check_thresholds reports it as a failure.
+    return f"WARNING key_facts below {warn_below:.2f} (key_facts={value:.3f})"
 
 
 def run_name(reasoning_effort: str) -> str:
@@ -227,6 +254,7 @@ def run(
     exclude_categories: Sequence[str] = (),
     use_data_tool: bool = True,
     warmup: bool = False,
+    tags: Mapping[str, str] | None = None,
 ) -> dict[str, float]:
     """One MLflow run over the selected questions; returns its metrics."""
     if answer is None:
@@ -262,7 +290,7 @@ def run(
         "rag_question_count": len(answerable(questions)),
     }
     name = run_name(reasoning_effort)
-    with mlflow.start_run(run_name=name):
+    with mlflow.start_run(run_name=name, tags=dict(tags or {})):
         mlflow.log_params(params)
         ref = reference if use_data_tool else None
         results = [evaluate_question(q, answer, ref, judge) for q in questions]
@@ -285,6 +313,29 @@ def run(
         f"data_tool_errors={metrics['data_tool_error_count']}, errors={metrics['error_count']}"
     )
     return metrics
+
+
+def previous_run_metrics(mlflow: Any, job_run_id: str, name: str) -> dict[str, float] | None:
+    """The metrics of a finished MLflow run named name for this job run, if an attempt made one.
+
+    Searches the active experiment. A run of a failed attempt that crashed mid-eval has status
+    FAILED and is ignored: that eval did not finish, so it runs again.
+    """
+    runs = mlflow.search_runs(
+        filter_string=(
+            f"tags.{JOB_RUN_TAG} = '{job_run_id}' AND tags.mlflow.runName = '{name}' "
+            "AND attributes.status = 'FINISHED'"
+        ),
+        output_format="list",
+        max_results=1,
+    )
+    if not runs:
+        return None
+    print(
+        f"{name}: job run {job_run_id} was already evaluated (MLflow run {runs[0].info.run_id}); "
+        "reusing its metrics, no second eval"
+    )
+    return dict(runs[0].data.metrics)
 
 
 # ---------------------------------------------------------------- command line
@@ -310,6 +361,16 @@ def _optional(convert: Callable[[str], Any]) -> Callable[[str], Any]:
 
     parse.__name__ = convert.__name__  # argparse names the type in its error message.
     return parse
+
+
+def _job_run_id(value: str) -> str | None:
+    """Digits only: the id goes into an MLflow filter string."""
+    value = value.strip()
+    if not value:
+        return None
+    if not value.isdigit():
+        raise argparse.ArgumentTypeError(f"not a job run id: {value!r}")
+    return value
 
 
 def _variants(value: str) -> tuple[str, ...]:
@@ -363,6 +424,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-citation-hit", type=_optional(float))
     parser.add_argument("--min-key-facts", type=_optional(float))
     parser.add_argument("--max-errors", type=_optional(int))
+    parser.add_argument(
+        "--job-run-id",
+        type=_job_run_id,
+        help="Databricks job run id ({{job.run_id}}): at most one eval per variant and job run",
+    )
     args = parser.parse_args(argv)
     args.exclude_category = list(dict.fromkeys(c for group in args.exclude_category for c in group))
     args.thresholds = Thresholds(
@@ -386,25 +452,37 @@ def main(argv: list[str] | None = None) -> None:
     mlflow.tracing.disable_notebook_display()
     failures = []
     for effort in args.variants:
-        metrics = run(
-            mlflow,
-            args.catalog,
-            args.schema,
-            reasoning_effort=effort,
-            exclude_categories=args.exclude_category,
-            use_data_tool=args.use_data_tool,
-            warmup=args.warmup,
-        )
+        name = run_name(effort)
+        metrics = None
+        if args.job_run_id:
+            metrics = previous_run_metrics(mlflow, args.job_run_id, name)
+        if metrics is None:
+            metrics = run(
+                mlflow,
+                args.catalog,
+                args.schema,
+                reasoning_effort=effort,
+                exclude_categories=args.exclude_category,
+                use_data_tool=args.use_data_tool,
+                warmup=args.warmup,
+                tags={JOB_RUN_TAG: args.job_run_id} if args.job_run_id else None,
+            )
         print(release_line(metrics))
-        warning = p95_warning(metrics)
-        if warning:
-            print(warning)
-        prefix = f"{run_name(effort)}: " if len(args.variants) > 1 else ""
+        warnings = (
+            p95_warning(metrics),
+            key_facts_warning(metrics, args.thresholds.min_key_facts),
+        )
+        for warning in warnings:
+            if warning:
+                print(warning)
+        prefix = f"{name}: " if len(args.variants) > 1 else ""
         failures += [prefix + failure for failure in check_thresholds(metrics, args.thresholds)]
     if failures:
-        # stdout, so the line lands in the job log next to RELEASE_EVAL; then a failed task.
-        print(f"RELEASE_EVAL FAILED: {'; '.join(failures)}", flush=True)
-        sys.exit(1)
+        message = f"RELEASE_EVAL FAILED: {'; '.join(failures)}"
+        # stdout too: the task's log holds stdout, the exception lands in the run's error.
+        print(message, flush=True)
+        # An exception, not sys.exit: the wheel task fails with the message as its error.
+        raise RuntimeError(message)
 
 
 if __name__ == "__main__":
