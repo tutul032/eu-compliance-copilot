@@ -5,6 +5,13 @@
 # answers' traces. Run after build_corpus: `databricks bundle run eval_agent -t <target> -p free`.
 # The run identity needs SELECT on workspace.energy_prod (Project 1, read-only) and CAN USE on the
 # warehouse. Serverless, no Spark needed.
+#
+# The job parameters below default to that full eval. The release evaluation
+# (.github/workflows/release-eval.yml, docs/runbook.md) overrides them with
+# `--params exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_behavior=1.0,...`:
+# no energy data (no warehouse grant needed), and a missed threshold fails the run. An empty
+# threshold is no gate. Lists (exclude_category, variants) take spaces, since --params splits on
+# commas.
 resources:
   jobs:
     eval_agent:
@@ -12,6 +19,23 @@ resources:
       max_concurrent_runs: 1
       # 40 questions at ~10-30 s (router, retrieval and/or SQL, answer), plus the judge.
       timeout_seconds: 5400
+      parameters:
+        - name: exclude_category
+          default: ""
+        - name: data_tool
+          default: "true"
+        - name: variants
+          default: medium
+        - name: warmup
+          default: "false"
+        - name: min_behavior
+          default: ""
+        - name: min_citation_hit
+          default: ""
+        - name: min_key_facts
+          default: ""
+        - name: max_errors
+          default: ""
       environments:
         # As eval_rag, plus the agent's graph (langgraph) and the SQL validator (sqlglot). The pins
         # equal uv.lock (tests/test_job_environments.py).
@@ -41,3 +65,19 @@ resources:
               - ${var.rag_experiment}
               - --warehouse-id
               - ${var.sql_warehouse_id}
+              - --exclude-category
+              - "{{job.parameters.exclude_category}}"
+              - --data-tool
+              - "{{job.parameters.data_tool}}"
+              - --variants
+              - "{{job.parameters.variants}}"
+              - --warmup
+              - "{{job.parameters.warmup}}"
+              - --min-behavior
+              - "{{job.parameters.min_behavior}}"
+              - --min-citation-hit
+              - "{{job.parameters.min_citation_hit}}"
+              - --min-key-facts
+              - "{{job.parameters.min_key_facts}}"
+              - --max-errors
+              - "{{job.parameters.max_errors}}"
