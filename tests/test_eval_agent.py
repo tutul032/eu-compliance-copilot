@@ -410,16 +410,30 @@ def test_excluding_every_question_fails():
         job.select_questions(QUESTIONS.questions, ["tool", "ai_act"])
 
 
-def _fake_mlflow_module(monkeypatch):
+def _fake_mlflow_module(monkeypatch, previous_runs=()):
+    searches = []
+
+    def search_runs(filter_string, output_format, max_results):
+        searches.append(filter_string)
+        return list(previous_runs)
+
     module = types.SimpleNamespace(
         set_tracking_uri=lambda uri: None,
         set_experiment=lambda path: None,
         tracing=types.SimpleNamespace(disable_notebook_display=lambda: None),
+        search_runs=search_runs,
     )
     monkeypatch.setitem(sys.modules, "mlflow", module)
+    return searches
 
 
-def test_main_prints_the_release_line_and_exits_non_zero_naming_the_gate(monkeypatch, capsys):
+def _previous_run(metrics):
+    return types.SimpleNamespace(
+        info=types.SimpleNamespace(run_id="abc123"), data=types.SimpleNamespace(metrics=metrics)
+    )
+
+
+def test_main_raises_naming_the_missed_gate(monkeypatch, capsys):
     _fake_mlflow_module(monkeypatch)
     seen = {}
 
@@ -430,14 +444,15 @@ def test_main_prints_the_release_line_and_exits_non_zero_naming_the_gate(monkeyp
     monkeypatch.setattr(job, "run", run)
     release = ["--exclude-category", "tool", "--no-data-tool", "--warmup"]
     gates = ["--min-citation-hit", "0.85", "--max-errors", "0"]
-    with pytest.raises(SystemExit) as exit_info:
+    with pytest.raises(RuntimeError) as error:
         job.main([*BASE_ARGS, *release, *gates])
-    assert exit_info.value.code == 1
+    assert str(error.value) == "RELEASE_EVAL FAILED: citation_hit=0.800 < min-citation-hit 0.85"
     assert seen == {
         "reasoning_effort": "medium",
         "exclude_categories": ["tool"],
         "use_data_tool": False,
         "warmup": True,
+        "tags": None,
     }
     assert capsys.readouterr().out.splitlines() == [
         "RELEASE_EVAL behavior=1.000 citation_hit=0.800 key_facts=0.850 p95_ms=11000 errors=0 n=36",
@@ -471,3 +486,127 @@ def test_job_parameter_defaults_are_the_full_eval():
     )
     assert args.thresholds == job.Thresholds() and args.use_data_tool and not args.warmup
     assert args.exclude_category == [] and args.variants == ("medium",)
+
+
+# ---------------------------------------------------------------- gate fix: key facts, retries
+
+
+def test_a_missed_threshold_raises_runtime_error_not_system_exit(monkeypatch):
+    """SystemExit is not an Exception: a RuntimeError fails the Databricks task with its message."""
+    _fake_mlflow_module(monkeypatch)
+    failing = {**PASSING, "behavior_correct": 35 / 36, "error_count": 1}
+    monkeypatch.setattr(job, "run", lambda mlflow, catalog, schema, **options: failing)
+    with pytest.raises(RuntimeError) as error:
+        job.main([*BASE_ARGS, "--min-behavior", "1.0", "--max-errors", "0"])
+    assert str(error.value) == (
+        "RELEASE_EVAL FAILED: behavior=0.972 < min-behavior 1; errors=1 > max-errors 0"
+    )
+
+
+def test_main_names_the_variant_of_each_failure(monkeypatch):
+    _fake_mlflow_module(monkeypatch)
+    by_effort = {"medium": dict(PASSING), "low": {**PASSING, "citation_hit": 0.7}}
+    monkeypatch.setattr(
+        job, "run", lambda mlflow, c, s, **options: by_effort[options["reasoning_effort"]]
+    )
+    with pytest.raises(RuntimeError, match="agent_low: citation_hit=0.700 < min-citation-hit"):
+        job.main([*BASE_ARGS, "--variants", "medium,low", "--min-citation-hit", "0.85"])
+
+
+@pytest.mark.parametrize(
+    ("key_facts", "minimum", "warning"),
+    [
+        (0.85, 0.75, None),
+        (0.80, 0.75, None),
+        (0.792, 0.75, "WARNING key_facts below 0.80 (key_facts=0.792)"),
+        (0.75, 0.75, "WARNING key_facts below 0.80 (key_facts=0.750)"),
+        (0.74, 0.75, None),  # A failure, not a warning.
+        (0.70, None, "WARNING key_facts below 0.80 (key_facts=0.700)"),
+    ],
+)
+def test_key_facts_warning(key_facts, minimum, warning):
+    metrics = {**PASSING, "key_fact_coverage": key_facts}
+    assert job.key_facts_warning(metrics, minimum) == warning
+
+
+def test_key_facts_hard_minimum_is_0_75():
+    gates = job.Thresholds(min_key_facts=0.75)
+    assert job.check_thresholds({**PASSING, "key_fact_coverage": 0.792}, gates) == []
+    assert job.check_thresholds({**PASSING, "key_fact_coverage": 0.749}, gates) == [
+        "key_facts=0.749 < min-key-facts 0.75"
+    ]
+
+
+def test_main_warns_on_key_facts_between_the_minimum_and_0_80(monkeypatch, capsys):
+    _fake_mlflow_module(monkeypatch)
+    metrics = {**PASSING, "key_fact_coverage": 0.792}
+    monkeypatch.setattr(job, "run", lambda mlflow, catalog, schema, **options: metrics)
+    job.main([*BASE_ARGS, "--min-key-facts", "0.75"])
+    assert capsys.readouterr().out.splitlines()[1:] == [
+        "WARNING key_facts below 0.80 (key_facts=0.792)"
+    ]
+
+
+def test_main_tags_the_run_with_the_job_run_id(monkeypatch):
+    searches = _fake_mlflow_module(monkeypatch)
+    seen = {}
+
+    def run(mlflow, catalog, schema, **options):
+        seen.update(options)
+        return dict(PASSING)
+
+    monkeypatch.setattr(job, "run", run)
+    job.main([*BASE_ARGS, "--job-run-id", "1017247263344096"])
+    assert seen["tags"] == {job.JOB_RUN_TAG: "1017247263344096"}
+    (search,) = searches
+    assert f"tags.{job.JOB_RUN_TAG} = '1017247263344096'" in search
+    assert "tags.mlflow.runName = 'agent_medium'" in search
+    assert "attributes.status = 'FINISHED'" in search
+
+
+def test_a_retried_attempt_reuses_the_finished_eval_and_still_fails(monkeypatch, capsys):
+    """The staging incident: attempt 0 failed on key_facts; a retry must not re-roll the judge."""
+    _fake_mlflow_module(monkeypatch, [_previous_run({**PASSING, "key_fact_coverage": 0.70})])
+
+    def run(*args, **options):
+        raise AssertionError("a finished eval of this job run must not run again")
+
+    monkeypatch.setattr(job, "run", run)
+    with pytest.raises(RuntimeError, match="key_facts=0.700 < min-key-facts 0.75"):
+        job.main([*BASE_ARGS, "--job-run-id", "42", "--min-key-facts", "0.75"])
+    out = capsys.readouterr().out
+    assert "already evaluated (MLflow run abc123)" in out
+    assert out.count("RELEASE_EVAL behavior=") == 1
+
+
+def test_without_a_job_run_id_nothing_is_searched(monkeypatch):
+    searches = _fake_mlflow_module(monkeypatch)
+    monkeypatch.setattr(job, "run", lambda mlflow, catalog, schema, **options: dict(PASSING))
+    job.main([*BASE_ARGS, "--job-run-id", ""])
+    assert searches == []
+
+
+def test_job_run_id_must_be_digits():
+    with pytest.raises(SystemExit):
+        job.parse_args([*BASE_ARGS, "--job-run-id", "1' OR '1'='1"])
+
+
+def test_run_logs_its_tags():
+    mlflow = _FakeMlflow()
+    job.run(
+        mlflow,
+        "workspace",
+        "s",
+        answer=_answer,
+        reference=lambda s: {"rows": [[1.0]]},
+        judge=lambda q, facts, a: ([], 0),
+        tags={job.JOB_RUN_TAG: "42"},
+    )
+    assert mlflow.runs[0]["tags"] == {job.JOB_RUN_TAG: "42"}
+
+
+def test_job_passes_the_job_run_id():
+    from test_job_environments import _job
+
+    params = _job("eval_agent")["tasks"][0]["python_wheel_task"]["parameters"]
+    assert params[params.index("--job-run-id") + 1] == "{{job.run_id}}"

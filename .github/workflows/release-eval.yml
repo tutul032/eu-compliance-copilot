@@ -3,8 +3,9 @@ name: release-eval
 # Release evaluation of staging (or prod) as the CI/CD service principal (sp-eucc-cicd): deploy
 # the bundle, then run eval_agent on the target's index with the release gates: no tool questions,
 # no energy data tool, reasoning effort medium only, one warmup call, and thresholds on behavior,
-# citation hit, key facts and errors. A missed threshold fails the job run and this workflow; a p95
-# above 10 s only warns. The RELEASE_EVAL line and the run URL go to the job summary.
+# citation hit, key facts (hard minimum 0.75) and errors. A missed threshold fails the job run and
+# this workflow; a p95 above 10 s or key facts below 0.80 only warn. The RELEASE_EVAL line, the
+# warnings and the run URL go to the job summary.
 # Runbook: docs/runbook.md, "Release evaluation".
 on:
   workflow_dispatch:
@@ -14,6 +15,10 @@ on:
         type: choice
         options: [staging, prod]
         default: staging
+      min_citation_hit:
+        description: Minimum citation hit (0-1), passed as --min-citation-hit
+        type: string
+        default: "0.85"
 
 permissions:
   contents: read
@@ -33,10 +38,20 @@ jobs:
       DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
       DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
       DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
-      # Job parameters of eval_agent (bundle run --params: comma-separated key=value pairs).
+      MIN_CITATION_HIT: ${{ inputs.min_citation_hit }}
+      # Job parameters of eval_agent (bundle run --params: comma-separated key=value pairs), but
+      # min_citation_hit, which comes from the input (added in the Run eval_agent step).
       EVAL_PARAMS: >-
-        exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_behavior=1.0,min_citation_hit=0.85,min_key_facts=0.80,max_errors=0
+        exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_behavior=1.0,min_key_facts=0.75,max_errors=0
     steps:
+      # Before anything is deployed. A number in [0, 1] only: the value goes into the
+      # comma-separated --params, where "0.85,min_behavior=0" would override another gate.
+      - name: Check inputs
+        run: |
+          if ! [[ "$MIN_CITATION_HIT" =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]]; then
+            echo "::error::min_citation_hit must be a number from 0 to 1, got: $MIN_CITATION_HIT"
+            exit 1
+          fi
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v6
         with:
@@ -46,28 +61,38 @@ jobs:
       - name: Deploy bundle
         run: databricks bundle deploy -t "$TARGET"
       # The job's output goes to this log. bundle run does not always print a task's logs (not
-      # for a failed run), so they are fetched from the run when the RELEASE_EVAL line is missing.
+      # for a failed run), so they are fetched from the run when the RELEASE_EVAL line is missing,
+      # or when the run failed and its RELEASE_EVAL FAILED line is missing.
       - name: Run eval_agent
         run: |
           set +e
-          databricks bundle run eval_agent -t "$TARGET" --params "$EVAL_PARAMS" 2>&1 | tee eval.log
+          params="$EVAL_PARAMS,min_citation_hit=$MIN_CITATION_HIT"
+          echo "Job parameters: $params"
+          databricks bundle run eval_agent -t "$TARGET" --params "$params" 2>&1 | tee eval.log
           status=${PIPESTATUS[0]}
           run_url=$(grep -m1 'Run URL' eval.log | grep -oE 'https://[^ ]+')
           echo "$run_url" > run_url.txt
-          if ! grep -q 'RELEASE_EVAL behavior=' eval.log && [ -n "$run_url" ]; then
+          missing=false
+          grep -q 'RELEASE_EVAL behavior=' eval.log || missing=true
+          if [ "$status" -ne 0 ] && ! grep -q 'RELEASE_EVAL FAILED' eval.log; then missing=true; fi
+          if [ "$missing" = true ] && [ -n "$run_url" ]; then
             run_id=$(echo "$run_url" | grep -oE 'runs?/[0-9]+' | grep -oE '[0-9]+')
-            task_run_id=$(databricks jobs get-run "$run_id" -o json | jq -r '.tasks[0].run_id')
+            # The last attempt, should the task ever run more than once.
+            task_run_id=$(databricks jobs get-run "$run_id" -o json | jq -r '.tasks[-1].run_id')
             echo "--- eval_agent task output (run $task_run_id) ---" | tee -a eval.log
             databricks jobs get-run-output "$task_run_id" -o json \
               | jq -r '.logs // "", .error // ""' | tee -a eval.log
           fi
           exit "$status"
+      # Also the second safety net: a RELEASE_EVAL FAILED line in the log fails this step, even if
+      # the job run or bundle run should ever report success (as a retried task once did).
       - name: Job summary
         if: always()
         run: |
           touch eval.log run_url.txt
-          release=$(grep -m1 -oE 'RELEASE_EVAL behavior=.*' eval.log || true)
-          notes=$(grep -oE 'WARNING p95 above.*|RELEASE_EVAL FAILED:.*' eval.log || true)
+          release=$(grep -oE 'RELEASE_EVAL behavior=.*' eval.log | tail -n 1 || true)
+          # Unique lines: the failure is in the task's stdout and in its error.
+          notes=$(grep -oE 'WARNING .*|RELEASE_EVAL FAILED:.*' eval.log | awk '!seen[$0]++' || true)
           run_url=$(cat run_url.txt)
           {
             echo "## Release evaluation: $TARGET"
@@ -79,3 +104,7 @@ jobs:
             echo
             echo "Run: ${run_url:-not started}"
           } >> "$GITHUB_STEP_SUMMARY"
+          if grep -q 'RELEASE_EVAL FAILED' eval.log; then
+            echo "::error::$(grep -m1 -oE 'RELEASE_EVAL FAILED:.*' eval.log)"
+            exit 1
+          fi

@@ -38,8 +38,17 @@ class _FakeMlflow:
     def __init__(self) -> None:
         self.runs: list[dict] = []
 
-    def start_run(self, run_name: str):
-        self.runs.append({"name": run_name, "params": {}, "metrics": {}, "texts": {}, "csv": None})
+    def start_run(self, run_name: str, tags: dict | None = None):
+        self.runs.append(
+            {
+                "name": run_name,
+                "tags": tags or {},
+                "params": {},
+                "metrics": {},
+                "texts": {},
+                "csv": None,
+            }
+        )
         return MagicMock()
 
     def log_params(self, params: dict) -> None:

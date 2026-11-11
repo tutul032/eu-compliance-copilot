@@ -126,3 +126,12 @@ def test_environment_runs_the_python_the_wheel_requires(name):
     # Version 2 is Python 3.11; 3 and later are 3.12, what requires-python asks for.
     assert _pyproject()["project"]["requires-python"] == ">=3.12"
     assert int(_job(name)["environments"][0]["spec"]["environment_version"]) >= 3
+
+
+@pytest.mark.parametrize("name", ["eval_retrieval", "eval_rag", "eval_agent"])
+def test_eval_tasks_never_retry(name):
+    """One eval per run: a retry re-rolls the LLM judge and can turn a failed gate into a pass."""
+    for task in _job(name)["tasks"]:
+        assert task["max_retries"] == 0
+        assert task["retry_on_timeout"] is False
+        assert task["disable_auto_optimization"] is True

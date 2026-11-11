@@ -27,7 +27,12 @@ resources:
       tasks:
         - task_key: eval_rag
           environment_key: eucc
+          # Exactly one eval per run. On serverless, auto-optimization retries a failed task even with
+          # max_retries: 0 (the API stores 0 as unset): a staging run failed on key_facts=0.792, was
+          # retried 3 s later, scored 0.866 and passed. disable_auto_optimization turns that off.
           max_retries: 0
+          retry_on_timeout: false
+          disable_auto_optimization: true
           python_wheel_task:
             package_name: eucc
             entry_point: eval_rag_job
