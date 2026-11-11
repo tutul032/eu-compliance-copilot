@@ -21,10 +21,16 @@ cited as [D1], [D2] ... A data row never counts as a law citation: the grounding
 regulations, and ignores [Dn]. For a data-only question it does not apply; a data-only question
 whose SQL tool failed gets the tool's error (status "error") without a model call.
 
+With use_data_tool=False (AgentDeps, run) the router still decides, but query_energy_data never
+runs: a question routed to the data goes to search_regulation instead, the prompt says that the
+energy data is not available, and the answer comes from the regulation sources only (grounding
+guardrail included). result["data_skipped"] says when that happened.
+
 Every node is an MLflow span; run() is the trace's root. Dependencies (chat, search, query) are
 injectable, so the graph runs in unit tests without the network.
 """
 
+import dataclasses
 import functools
 import re
 import time
@@ -45,6 +51,10 @@ ROUTER_REASONING_EFFORT = "low"
 SEARCH_KEEP = rag.MAX_SOURCES
 MAX_DATA_ROWS_IN_PROMPT = sql_tool.ROW_LIMIT
 DATA_ERROR_STATUS = rag.ERROR_STATUS
+DATA_DISABLED_NOTE = (
+    "Data: the energy data tool is not available in this configuration. Answer from the sources "
+    "only and say that the energy data is not available."
+)
 
 # A guessed number steers retrieval to the guess; a wrong one hides the right provision.
 REGULATION_QUERY_RULE = (
@@ -144,6 +154,7 @@ class AgentState(TypedDict, total=False):
     needs_regulation: bool
     needs_data: bool
     route_method: str  # "llm" or "keywords" (the fallback)
+    data_skipped: bool  # needs_data, but the data tool is off (AgentDeps.use_data_tool).
     regulation_query: str | None  # The router's legal-terms rewrite; None from the keywords.
     sources: list[rag.Source]
     sql: str | None
@@ -164,6 +175,8 @@ class AgentDeps:
     search: SearchFn
     query: QueryFn
     reasoning_effort: str = rag.DEFAULT_REASONING_EFFORT
+    # False: never call query; questions that need data are answered from the regulations only.
+    use_data_tool: bool = True
 
 
 def default_deps(
@@ -174,6 +187,7 @@ def default_deps(
     index: str | None = None,
     model: str = rag.MODEL,
     warehouse: str | None = None,
+    use_data_tool: bool = True,
 ) -> AgentDeps:
     """The real tools: chunks_idx in catalog.schema, gpt-oss, the energy SQL warehouse.
 
@@ -193,6 +207,7 @@ def default_deps(
             run=functools.partial(sql_tool.run_sql, warehouse=warehouse),
         ),
         reasoning_effort=reasoning_effort,
+        use_data_tool=use_data_tool,
     )
 
 
@@ -332,11 +347,14 @@ def build_messages(
     sources: Sequence[rag.Source],
     data: dict[str, Any] | None,
     sql: str | None,
+    data_skipped: bool = False,
 ) -> list[dict[str, str]]:
     language = rag.LANGUAGE_NAMES.get(lang, lang)
     parts = [f"Sources:\n\n{rag.format_sources(sources) or '(none)'}"]
     if data is not None:
         parts.append(format_data(data, sql))
+    elif data_skipped:
+        parts.append(DATA_DISABLED_NOTE)
     parts.append(f"Question (answer in {language}):\n{question}")
     return [
         {"role": "system", "content": AGENT_SYSTEM_PROMPT},
@@ -390,7 +408,12 @@ def build_graph(deps: AgentDeps) -> Any:
     def route(state: AgentState) -> AgentState:
         question = state["question"]
         decision, method = route_question(question, deps.chat)
-        return {"lang": rag.detect_language(question), **decision, "route_method": method}
+        return {
+            "lang": rag.detect_language(question),
+            **decision,
+            "route_method": method,
+            "data_skipped": decision["needs_data"] and not deps.use_data_tool,
+        }
 
     @mlflow.trace(name="search_regulation", span_type="RETRIEVER")
     def search_node(state: AgentState) -> AgentState:
@@ -422,9 +445,9 @@ def build_graph(deps: AgentDeps) -> Any:
 
     def next_nodes(state: AgentState) -> list[str]:
         nodes = []
-        if state["needs_regulation"]:
+        if state["needs_regulation"] or state["data_skipped"]:
             nodes.append("search_regulation")
-        if state["needs_data"]:
+        if state["needs_data"] and not state["data_skipped"]:
             nodes.append("query_energy_data")
         return nodes
 
@@ -445,6 +468,9 @@ def compose_answer(state: AgentState, deps: AgentDeps) -> AgentState:
     """Generate (ADR-0005 contract), check [n] and [Dn], apply the guardrail to the law part."""
     question, lang = state["question"], state["lang"]
     needs_regulation = state.get("needs_regulation", True)
+    data_skipped = state.get("data_skipped", False)
+    # Without the data tool the regulation sources are the only basis: the guardrail applies.
+    needs_citations = needs_regulation or data_skipped
     sources = state.get("sources") or []
     data, sql = state.get("data"), state.get("sql")
 
@@ -457,7 +483,7 @@ def compose_answer(state: AgentState, deps: AgentDeps) -> AgentState:
             "attempts": 0,
         }
     else:
-        messages = build_messages(question, lang, sources, data, sql)
+        messages = build_messages(question, lang, sources, data, sql, data_skipped)
         generated = rag.generate_from_messages(messages, deps.reasoning_effort, deps.chat)
     status, text = generated["status"], generated["answer"]
     citations: list[dict[str, Any]] = []
@@ -467,7 +493,7 @@ def compose_answer(state: AgentState, deps: AgentDeps) -> AgentState:
     if status != rag.ERROR_STATUS:
         text, citations, invalid = rag.check_citations(text, sources)
         text, data_citations, invalid_data = check_data_citations(text, data)
-    if needs_regulation and status == "answered" and not citations:
+    if needs_citations and status == "answered" and not citations:
         status = rag.UNSUPPORTED_STATUS
         text = "\n\n".join(
             part for part in (rag.unsupported_answer(lang, sources), data_table(lang, data)) if part
@@ -491,6 +517,7 @@ def compose_answer(state: AgentState, deps: AgentDeps) -> AgentState:
         },
         "sql": sql,
         "data": data,
+        "data_skipped": data_skipped,
         "sources": [rag._citation(n, s) for n, s in enumerate(sources, start=1)],
         "retrieved_chunk_ids": [cid for source in sources for cid in source.chunk_ids],
         "invalid_citations": invalid,
@@ -507,12 +534,24 @@ def run(
     schema: str = rag.DEFAULT_SCHEMA,
     reasoning_effort: str = rag.DEFAULT_REASONING_EFFORT,
     deps: AgentDeps | None = None,
+    use_data_tool: bool = True,
 ) -> dict[str, Any]:
-    """The agent's answer to one question, as a dict compatible with eucc.rag.answer's result."""
+    """The agent's answer to one question, as a dict compatible with eucc.rag.answer's result.
+
+    use_data_tool=False turns the energy data tool off, also for injected deps.
+    """
     if reasoning_effort not in rag.REASONING_EFFORTS:
         raise ValueError(f"reasoning_effort must be one of {rag.REASONING_EFFORTS}")
     start = time.perf_counter()
-    deps = deps or default_deps(catalog=catalog, schema=schema, reasoning_effort=reasoning_effort)
+    if deps is None:
+        deps = default_deps(
+            catalog=catalog,
+            schema=schema,
+            reasoning_effort=reasoning_effort,
+            use_data_tool=use_data_tool,
+        )
+    elif not use_data_tool:
+        deps = dataclasses.replace(deps, use_data_tool=False)
     state = build_graph(deps).invoke({"question": question})
     result = dict(state["result"])
     result["latency_ms"] = round((time.perf_counter() - start) * 1000)

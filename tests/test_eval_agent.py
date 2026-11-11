@@ -1,5 +1,8 @@
 """Agent eval: route and data scoring, and the job with fakes (no network, fake mlflow)."""
 
+import sys
+import types
+
 import pytest
 from test_eval_rag_job import _FakeMlflow
 
@@ -216,3 +219,255 @@ def test_job_applies_the_question_data_match(monkeypatch):
         judge=lambda q, facts, a: ([], 0),
     )
     assert metrics["data_correct"] == 1.0  # The answer gives only the MAPE (2.4 %).
+
+
+# ---------------------------------------------------------------- release evaluation
+
+RELEASE = job.Thresholds(min_behavior=1.0, min_citation_hit=0.85, min_key_facts=0.80, max_errors=0)
+PASSING = {
+    "behavior_correct": 1.0,
+    "citation_hit": 0.9,
+    "key_fact_coverage": 0.85,
+    "p95_latency_ms": 8123.4,
+    "error_count": 0,
+    "question_count": 36,
+}
+
+
+def test_thresholds_pass():
+    assert job.check_thresholds(PASSING, RELEASE) == []
+
+
+def test_thresholds_name_every_missed_gate():
+    metrics = {**PASSING, "behavior_correct": 35 / 36, "citation_hit": 0.8, "error_count": 2}
+    assert job.check_thresholds(metrics, RELEASE) == [
+        "behavior=0.972 < min-behavior 1",
+        "citation_hit=0.800 < min-citation-hit 0.85",
+        "errors=2 > max-errors 0",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("metric", "value", "failure"),
+    [
+        ("key_fact_coverage", 0.7999, "key_facts=0.800 < min-key-facts 0.8"),
+        ("citation_hit", None, "citation_hit=missing < min-citation-hit 0.85"),
+        ("error_count", None, "errors=missing > max-errors 0"),
+    ],
+)
+def test_threshold_failures(metric, value, failure):
+    metrics = {k: v for k, v in PASSING.items() if k != metric}
+    if value is not None:
+        metrics[metric] = value
+    assert job.check_thresholds(metrics, RELEASE) == [failure]
+
+
+def test_threshold_at_the_boundary_passes():
+    metrics = {**PASSING, "citation_hit": 0.85, "key_fact_coverage": 0.8, "error_count": 0}
+    assert job.check_thresholds(metrics, RELEASE) == []
+    assert job.check_thresholds({**PASSING, "behavior_correct": 36 / 36}, RELEASE) == []
+
+
+def test_unset_thresholds_gate_nothing():
+    assert job.check_thresholds({"error_count": 5}, job.Thresholds()) == []
+
+
+def test_release_line_and_p95_warning():
+    assert job.release_line(PASSING) == (
+        "RELEASE_EVAL behavior=1.000 citation_hit=0.900 key_facts=0.850 p95_ms=8123 errors=0 n=36"
+    )
+    assert "citation_hit=n/a" in job.release_line({**PASSING, "citation_hit": None})
+    assert job.p95_warning(PASSING) is None
+    assert job.p95_warning({**PASSING, "p95_latency_ms": 10_000}) is None
+    assert job.p95_warning({**PASSING, "p95_latency_ms": 12_345}) == (
+        "WARNING p95 above 10000 ms (p95_ms=12345)"
+    )
+
+
+BASE_ARGS = ["--catalog", "workspace", "--schema", "s", "--experiment", "/Users/me/x"]
+
+
+def test_parse_args_defaults_are_the_full_eval():
+    args = job.parse_args(BASE_ARGS)
+    assert args.exclude_category == [] and args.use_data_tool is True
+    assert args.variants == ("medium",) and args.warmup is False
+    assert args.thresholds == job.Thresholds()
+
+
+def test_parse_args_release_flags():
+    args = job.parse_args(
+        [
+            *BASE_ARGS,
+            *["--exclude-category", "tool", "--no-data-tool", "--variants", "medium", "--warmup"],
+            *["--min-behavior", "1.0", "--min-citation-hit", "0.85"],
+            *["--min-key-facts", "0.80", "--max-errors", "0"],
+        ]
+    )
+    assert args.exclude_category == ["tool"] and args.use_data_tool is False
+    assert args.variants == ("medium",) and args.warmup is True
+    assert args.thresholds == RELEASE
+
+
+def test_parse_args_job_parameter_values():
+    """What the job passes from {{job.parameters.*}}: every option with a value, "" unset."""
+    args = job.parse_args(
+        [
+            *BASE_ARGS,
+            *["--exclude-category", "tool cross", "--data-tool", "false"],
+            *["--variants", "medium low", "--warmup", "true"],
+            *["--min-behavior", "", "--min-citation-hit", "0.85"],
+            *["--min-key-facts", "", "--max-errors", ""],
+        ]
+    )
+    assert args.exclude_category == ["tool", "cross"] and args.use_data_tool is False
+    assert args.variants == ("medium", "low") and args.warmup is True
+    assert args.thresholds == job.Thresholds(min_citation_hit=0.85)
+    defaults = job.parse_args(
+        [*BASE_ARGS, "--exclude-category", "", "--data-tool", "true", "--warmup", "false"]
+    )
+    assert defaults.exclude_category == [] and defaults.use_data_tool and not defaults.warmup
+
+
+@pytest.mark.parametrize("bad", [["--variants", "high"], ["--warmup", "maybe"]])
+def test_parse_args_rejects_bad_values(bad):
+    with pytest.raises(SystemExit):
+        job.parse_args([*BASE_ARGS, *bad])
+
+
+def test_release_run_excludes_tool_questions_and_skips_the_data(monkeypatch):
+    monkeypatch.setattr(job, "load_questions", lambda: QUESTIONS)
+    asked = []
+
+    def answer(question):
+        asked.append(question)
+        return _answer(question)
+
+    def reference(sql):
+        raise AssertionError("no reference query without the data tool")
+
+    mlflow = _FakeMlflow()
+    metrics = job.run(
+        mlflow,
+        "workspace",
+        "compliance_staging",
+        answer=answer,
+        reference=reference,
+        judge=lambda q, facts, a: (list(facts), 7),
+        exclude_categories=["tool"],
+        use_data_tool=False,
+        warmup=True,
+    )
+    assert asked == ["Question aia-03?", "Question aia-03?"]  # Warmup, then the timed loop.
+    (logged,) = mlflow.runs
+    assert logged["name"] == "agent_medium"
+    assert logged["params"]["use_data_tool"] is False
+    assert logged["params"]["excluded_categories"] == "tool"
+    assert logged["params"]["warmup"] is True
+    assert metrics["question_count"] == 1 and metrics["agent_question_count"] == 1
+    assert [r["id"] for r in logged["csv"][1]] == ["aia-03"]
+
+
+def test_a_failed_warmup_does_not_stop_the_run(monkeypatch):
+    monkeypatch.setattr(job, "load_questions", lambda: QUESTIONS)
+    calls = []
+
+    def answer(question):
+        calls.append(question)
+        if len(calls) == 1:
+            raise TimeoutError("cold")
+        return _answer(question)
+
+    metrics = job.run(
+        _FakeMlflow(),
+        "workspace",
+        "s",
+        answer=answer,
+        reference=lambda s: {"rows": [[242.13]]},
+        judge=lambda q, facts, a: ([], 0),
+        warmup=True,
+    )
+    assert metrics["error_count"] == 0
+
+
+def test_low_variant_names_its_run(monkeypatch):
+    monkeypatch.setattr(job, "load_questions", lambda: QUESTIONS)
+    mlflow = _FakeMlflow()
+    job.run(
+        mlflow,
+        "workspace",
+        "s",
+        answer=_answer,
+        reference=lambda s: {"rows": [[1.0]]},
+        judge=lambda q, facts, a: ([], 0),
+        reasoning_effort="low",
+    )
+    assert mlflow.runs[0]["name"] == "agent_low"
+    assert mlflow.runs[0]["params"]["reasoning_effort"] == "low"
+
+
+def test_excluding_every_question_fails():
+    with pytest.raises(ValueError, match="no questions"):
+        job.select_questions(QUESTIONS.questions, ["tool", "ai_act"])
+
+
+def _fake_mlflow_module(monkeypatch):
+    module = types.SimpleNamespace(
+        set_tracking_uri=lambda uri: None,
+        set_experiment=lambda path: None,
+        tracing=types.SimpleNamespace(disable_notebook_display=lambda: None),
+    )
+    monkeypatch.setitem(sys.modules, "mlflow", module)
+
+
+def test_main_prints_the_release_line_and_exits_non_zero_naming_the_gate(monkeypatch, capsys):
+    _fake_mlflow_module(monkeypatch)
+    seen = {}
+
+    def run(mlflow, catalog, schema, **options):
+        seen.update(options)
+        return {**PASSING, "citation_hit": 0.8, "p95_latency_ms": 11_000}
+
+    monkeypatch.setattr(job, "run", run)
+    release = ["--exclude-category", "tool", "--no-data-tool", "--warmup"]
+    gates = ["--min-citation-hit", "0.85", "--max-errors", "0"]
+    with pytest.raises(SystemExit) as exit_info:
+        job.main([*BASE_ARGS, *release, *gates])
+    assert exit_info.value.code == 1
+    assert seen == {
+        "reasoning_effort": "medium",
+        "exclude_categories": ["tool"],
+        "use_data_tool": False,
+        "warmup": True,
+    }
+    assert capsys.readouterr().out.splitlines() == [
+        "RELEASE_EVAL behavior=1.000 citation_hit=0.800 key_facts=0.850 p95_ms=11000 errors=0 n=36",
+        "WARNING p95 above 10000 ms (p95_ms=11000)",
+        "RELEASE_EVAL FAILED: citation_hit=0.800 < min-citation-hit 0.85",
+    ]
+
+
+def test_main_passes_without_a_failure_line(monkeypatch, capsys):
+    _fake_mlflow_module(monkeypatch)
+    monkeypatch.setattr(job, "run", lambda mlflow, catalog, schema, **options: dict(PASSING))
+    job.main([*BASE_ARGS, "--min-behavior", "1.0", "--max-errors", "0"])
+    out = capsys.readouterr().out
+    assert out.startswith("RELEASE_EVAL behavior=1.000")
+    assert "FAILED" not in out and "WARNING" not in out
+
+
+def test_job_parameter_defaults_are_the_full_eval():
+    """Each job parameter feeds its option; the defaults keep a plain bundle run unchanged."""
+    from test_job_environments import _job
+
+    definition = _job("eval_agent")
+    names = {p["name"] for p in definition["parameters"]}
+    params = definition["tasks"][0]["python_wheel_task"]["parameters"]
+    for name in names:
+        option = "--" + name.replace("_", "-")
+        assert params[params.index(option) + 1] == f"{{{{job.parameters.{name}}}}}"
+    defaults = {p["name"]: p["default"] for p in definition["parameters"]}
+    args = job.parse_args(
+        [*BASE_ARGS, *(x for n, v in defaults.items() for x in ("--" + n.replace("_", "-"), v))]
+    )
+    assert args.thresholds == job.Thresholds() and args.use_data_tool and not args.warmup
+    assert args.exclude_category == [] and args.variants == ("medium",)

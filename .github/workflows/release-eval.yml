@@ -1,0 +1,81 @@
+name: release-eval
+
+# Release evaluation of staging (or prod) as the CI/CD service principal (sp-eucc-cicd): deploy
+# the bundle, then run eval_agent on the target's index with the release gates: no tool questions,
+# no energy data tool, reasoning effort medium only, one warmup call, and thresholds on behavior,
+# citation hit, key facts and errors. A missed threshold fails the job run and this workflow; a p95
+# above 10 s only warns. The RELEASE_EVAL line and the run URL go to the job summary.
+# Runbook: docs/runbook.md, "Release evaluation".
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Bundle target to evaluate
+        type: choice
+        options: [staging, prod]
+        default: staging
+
+permissions:
+  contents: read
+
+# One eval per target at a time (the job also has max_concurrent_runs: 1).
+concurrency:
+  group: release-eval-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  release-eval:
+    runs-on: ubuntu-24.04
+    # Deploy takes minutes; eval_agent allows up to 90 (resources/eval_agent.job.yml).
+    timeout-minutes: 120
+    env:
+      TARGET: ${{ inputs.target }}
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+      # Job parameters of eval_agent (bundle run --params: comma-separated key=value pairs).
+      EVAL_PARAMS: >-
+        exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_behavior=1.0,min_citation_hit=0.85,min_key_facts=0.80,max_errors=0
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked
+      - uses: databricks/setup-cli@v1.23.0
+      - name: Deploy bundle
+        run: databricks bundle deploy -t "$TARGET"
+      # The job's output goes to this log. bundle run does not always print a task's logs (not
+      # for a failed run), so they are fetched from the run when the RELEASE_EVAL line is missing.
+      - name: Run eval_agent
+        run: |
+          set +e
+          databricks bundle run eval_agent -t "$TARGET" --params "$EVAL_PARAMS" 2>&1 | tee eval.log
+          status=${PIPESTATUS[0]}
+          run_url=$(grep -m1 'Run URL' eval.log | grep -oE 'https://[^ ]+')
+          echo "$run_url" > run_url.txt
+          if ! grep -q 'RELEASE_EVAL behavior=' eval.log && [ -n "$run_url" ]; then
+            run_id=$(echo "$run_url" | grep -oE 'runs?/[0-9]+' | grep -oE '[0-9]+')
+            task_run_id=$(databricks jobs get-run "$run_id" -o json | jq -r '.tasks[0].run_id')
+            echo "--- eval_agent task output (run $task_run_id) ---" | tee -a eval.log
+            databricks jobs get-run-output "$task_run_id" -o json \
+              | jq -r '.logs // "", .error // ""' | tee -a eval.log
+          fi
+          exit "$status"
+      - name: Job summary
+        if: always()
+        run: |
+          touch eval.log run_url.txt
+          release=$(grep -m1 -oE 'RELEASE_EVAL behavior=.*' eval.log || true)
+          notes=$(grep -oE 'WARNING p95 above.*|RELEASE_EVAL FAILED:.*' eval.log || true)
+          run_url=$(cat run_url.txt)
+          {
+            echo "## Release evaluation: $TARGET"
+            echo
+            echo '```'
+            echo "${release:-RELEASE_EVAL line not found (see the step log)}"
+            if [ -n "$notes" ]; then echo "$notes"; fi
+            echo '```'
+            echo
+            echo "Run: ${run_url:-not started}"
+          } >> "$GITHUB_STEP_SUMMARY"

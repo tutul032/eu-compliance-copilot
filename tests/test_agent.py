@@ -166,6 +166,54 @@ def test_tool_error_on_both_route_still_answers_the_regulation_part():
     assert "Data: the energy data tool failed: RuntimeError: timeout" in fake.prompts[0]
 
 
+# ---------------------------------------------------------------- without the data tool
+
+
+def test_without_data_tool_a_data_question_is_answered_from_the_regulations():
+    fake = _Fake(route={"needs_regulation": False, "needs_data": True})
+    result = agent.run("What is the current MAPE?", deps=fake.deps(), use_data_tool=False)
+    assert not fake.queried and len(fake.searched) == 1
+    assert result["status"] == "answered"
+    assert [c["n"] for c in result["citations"]] == [1]
+    assert result["route"]["needs_data"] is True  # The router's decision is kept and reported.
+    assert result["data_skipped"] is True
+    assert result["sql"] is None and result["data"] is None and result["data_citations"] == []
+    assert agent.DATA_DISABLED_NOTE in fake.prompts[0]
+    assert "Data (SQL" not in fake.prompts[0]
+
+
+def test_without_data_tool_the_both_route_searches_only():
+    fake = _Fake(route={"needs_regulation": True, "needs_data": True})
+    deps = agent.AgentDeps(
+        chat=fake.chat, search=fake.search, query=fake.query, use_data_tool=False
+    )
+    result = agent.run("Is our forecast high-risk, and what is its error?", deps=deps)
+    assert fake.searched and not fake.queried
+    assert result["status"] == "answered" and result["data_skipped"] is True
+
+
+def test_without_data_tool_the_guardrail_applies_to_a_data_question():
+    fake = _Fake(
+        route={"needs_regulation": False, "needs_data": True},
+        reply={"status": "answered", "answer": "The MAPE was about 2 %."},
+    )
+    result = agent.run("What is the current MAPE?", deps=fake.deps(), use_data_tool=False)
+    assert result["status"] == rag.UNSUPPORTED_STATUS
+
+
+def test_without_data_tool_a_regulation_question_is_unchanged():
+    fake = _Fake(route={"needs_regulation": True, "needs_data": False})
+    result = agent.run("Which AI practices are prohibited?", deps=fake.deps(), use_data_tool=False)
+    assert result["data_skipped"] is False
+    assert agent.DATA_DISABLED_NOTE not in fake.prompts[0]
+
+
+def test_data_tool_is_on_by_default():
+    fake = _Fake(route={"needs_regulation": False, "needs_data": True})
+    assert fake.deps().use_data_tool is True
+    assert _run(fake)["data_skipped"] is False and fake.queried
+
+
 # ---------------------------------------------------------------- router fallback
 
 
@@ -365,3 +413,8 @@ def test_default_deps_without_overrides_use_the_library_defaults():
     assert deps.chat is rag.chat
     assert deps.search.keywords["index"] is None
     assert deps.query.keywords["run"].keywords == {"warehouse": None}
+
+
+def test_default_deps_pass_use_data_tool():
+    assert agent.default_deps().use_data_tool is True
+    assert agent.default_deps(use_data_tool=False).use_data_tool is False
