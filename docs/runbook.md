@@ -83,16 +83,26 @@ with these job parameters:
 | `data_tool` | `false` | The agent runs without its SQL tool, and no reference query runs. A question routed to the data is answered from the regulations only. The SP needs no warehouse or `energy_prod` grant. |
 | `variants` | `medium` | Reasoning effort medium only: one MLflow run, `agent_medium`. |
 | `warmup` | `true` | One untimed agent call before the timed loop, so a cold endpoint does not skew p95. |
-| `min_behavior` | `1.0` | Every question has the expected status (answered, refused, out of scope). |
+| `min_safety` | `1.0` | Every safety question (refuse, out_of_scope, correct_premise: 4) has the expected status. No tolerance. |
+| `min_answer_rate` | `0.95` | Share of answer questions with status `answered`: at most 1 of 32 may end `unsupported` or `out_of_scope`. |
 | `min_citation_hit` | `0.85` | Share of answer questions whose citations include the expected provisions. Workflow input: `gh workflow run release-eval.yml -f min_citation_hit=0.80`. |
 | `min_key_facts` | `0.75` | Mean key-fact coverage (LLM judge). Below 0.80 only warns: the judge varied by 0.07 between two runs of the same system (0.792 vs 0.866). |
 | `max_errors` | `0` | No failed or unparseable answer. |
 
-The job's output goes to the step log. The job summary shows its result line and the run URL:
+Why safety is strict and quality has a margin: [ADR-0007](adr/0007-release-gates.md). The same
+system varied over three runs: citation hit 0.879–0.909, key facts 0.778–0.880, behavior
+0.972–1.000.
+
+The job's output goes to the step log. The job summary shows the result line, one
+`RELEASE_EVAL_MISS` line per question with the wrong behavior or an error, the warnings and the
+run URL:
 
 ```text
-RELEASE_EVAL behavior=1.000 citation_hit=0.889 key_facts=0.853 p95_ms=8123 errors=0 n=36
+RELEASE_EVAL_MISS id=aia-03 expected=answer status=unsupported error=-
+RELEASE_EVAL safety=1.000 answer_rate=0.969 behavior=0.972 citation_hit=0.889 key_facts=0.853 p95_ms=8123 errors=0 n=36
 ```
+
+`behavior` (the mean over safety and answer questions) and `p95_ms` are information only.
 
 - **Pass:** every threshold met. The workflow is green.
 - **Fail:** the job prints `RELEASE_EVAL FAILED: <metric>=<value> < <threshold>` for each missed
@@ -117,13 +127,13 @@ In dev, as yourself:
 
 ```sh
 databricks bundle run eval_agent -t dev -p free --params \
-  exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_behavior=1.0,min_citation_hit=0.85,min_key_facts=0.75,max_errors=0
+  exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_safety=1.0,min_answer_rate=0.95,min_citation_hit=0.85,min_key_facts=0.75,max_errors=0
 ```
 
 Without `--params`, the job runs the full agent eval: all 40 questions, with the data tool and no
 thresholds. `--params` splits on commas, so a list parameter takes spaces instead, for example
 `variants=medium low`. Locally the same options work as flags:
-`uv run eval_agent_job ... --exclude-category tool --no-data-tool --warmup --min-behavior 1.0`.
+`uv run eval_agent_job ... --exclude-category tool --no-data-tool --warmup --min-safety 1.0`.
 
 Deploy staging and prod only from CI. A local `bundle deploy -t staging` puts the experiment
 path in your own home folder, where the SP (the job's `run_as`) cannot write.
@@ -133,8 +143,10 @@ path in your own home folder, where the SP (the job's `run_as`) cannot write.
 - **A threshold is missed:** open the run in the experiment and sort the per-question CSV by the
   failing metric. Check whether the index is current (a refresh that has not finished syncing) or
   whether a prompt or retrieval change caused it. Compare with the previous `agent_medium` run.
-- **`errors` > 0:** usually an endpoint timeout or a 429. The answer column holds the exception.
-  Re-run once. If it repeats, check the serving endpoint and the SP's access to it and to
-  `eucc-vs`.
+- **`errors` > 0:** every model call already retried transient errors (429, 5xx, timeouts,
+  connection resets) 3 times with backoff; each retry is logged as
+  `<endpoint> chat: retry n/3 in x s after <error>`. An error left is persistent: the
+  `RELEASE_EVAL_MISS … error=` line shows it. Check the serving endpoint, its rate limits and the
+  SP's access to it and to `eucc-vs`, then re-run.
 - **No RELEASE_EVAL line:** the job failed before scoring (deploy, environment, permissions).
   The step log shows the task's error, fetched with `databricks jobs get-run-output`.

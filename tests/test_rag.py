@@ -2,9 +2,12 @@
 are fakes behind rag._workspace."""
 
 import json
+import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import httpx
+import openai
 import pytest
 
 from eucc import rag
@@ -830,3 +833,132 @@ def test_chat_sends_the_model_override(workspace):
     rag.chat([{"role": "user", "content": "q"}], "low")
     models = [c.kwargs["model"] for c in workspace.openai.chat.completions.create.call_args_list]
     assert models == ["other-endpoint", rag.MODEL]
+
+
+# ---------------------------------------------------------------- retries of transient errors
+
+
+def _status_error(status: int, headers: dict | None = None) -> openai.APIStatusError:
+    request = httpx.Request("POST", "https://example.invalid/serving-endpoints/chat")
+    response = httpx.Response(status, request=request, headers=headers or {})
+    error_class = {429: openai.RateLimitError, 400: openai.BadRequestError}.get(
+        status, openai.InternalServerError
+    )
+    return error_class(f"Error code: {status}", response=response, body=None)
+
+
+@pytest.fixture
+def no_wait(monkeypatch):
+    """Record the delays instead of sleeping; jitter returns the ceiling (deterministic)."""
+    delays = []
+    monkeypatch.setattr(rag, "_sleep", delays.append)
+    monkeypatch.setattr(rag, "_jitter", lambda low, high: high)
+    return delays
+
+
+def test_chat_retries_a_429_then_succeeds_and_logs_the_retry(workspace, no_wait, caplog):
+    create = workspace.openai.chat.completions.create
+    create.side_effect = [_status_error(429), _completion('{"status": "answered"}')]
+    with caplog.at_level(logging.WARNING, logger="eucc.rag"):
+        text, _ = rag.chat([{"role": "user", "content": "q"}], "low")
+    assert text == '{"status": "answered"}'
+    assert create.call_count == 2
+    assert no_wait == [1.0]
+    (record,) = caplog.records
+    assert record.getMessage().startswith(
+        f"{rag.MODEL} chat: retry 1/3 in 1.0 s after RateLimitError: Error code: 429"
+    )
+
+
+def test_backoff_is_exponential_and_gives_up_after_three_retries(no_wait, caplog):
+    calls = []
+
+    def call():
+        calls.append(1)
+        raise _status_error(503)
+
+    with (
+        caplog.at_level(logging.WARNING, logger="eucc.rag"),
+        pytest.raises(openai.InternalServerError),
+    ):
+        rag.call_with_retries(call)
+    assert len(calls) == 4  # The first try and 3 retries.
+    assert no_wait == [1.0, 2.0, 4.0]
+    assert [r.getMessage().split(":")[1].strip()[:9] for r in caplog.records] == [
+        "retry 1/3",
+        "retry 2/3",
+        "retry 3/3",
+    ]
+
+
+def test_jitter_draws_below_the_exponential_ceiling(monkeypatch):
+    bounds = []
+    monkeypatch.setattr(rag, "_jitter", lambda low, high: bounds.append((low, high)) or 0.3)
+    assert [rag.retry_delay(n) for n in (1, 2, 3, 6)] == [0.3, 0.3, 0.3, 0.3]
+    assert bounds == [(0.0, 1.0), (0.0, 2.0), (0.0, 4.0), (0.0, rag.LLM_RETRY_MAX_DELAY)]
+
+
+def test_retry_after_raises_the_delay(no_wait):
+    error = _status_error(429, headers={"retry-after": "7"})
+    assert rag.retry_delay(1, error) == 7.0
+    huge = _status_error(429, headers={"retry-after": "3600"})
+    assert rag.retry_delay(1, huge) == rag.LLM_RETRY_MAX_DELAY
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        _status_error(429),
+        _status_error(500),
+        _status_error(503),
+        openai.APITimeoutError(request=httpx.Request("POST", "https://example.invalid")),
+        openai.APIConnectionError(request=httpx.Request("POST", "https://example.invalid")),
+        httpx.ReadTimeout("read timed out"),
+        httpx.ReadError("connection reset by peer"),
+        ConnectionResetError(104, "Connection reset by peer"),
+        TimeoutError("timed out"),
+    ],
+)
+def test_transient_errors(error):
+    assert rag.is_transient(error)
+
+
+@pytest.mark.parametrize("error", [_status_error(400), ValueError("bad JSON"), KeyError("choices")])
+def test_permanent_errors_are_not_retried(error, no_wait):
+    assert not rag.is_transient(error)
+    calls = []
+
+    def call():
+        calls.append(1)
+        raise error
+
+    with pytest.raises(type(error)):
+        rag.call_with_retries(call)
+    assert len(calls) == 1 and no_wait == []
+
+
+def test_a_connection_reset_then_success(no_wait):
+    replies = iter([ConnectionResetError("reset"), httpx.ReadTimeout("slow"), "ok"])
+
+    def call():
+        reply = next(replies)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    assert rag.call_with_retries(call) == "ok"
+    assert no_wait == [1.0, 2.0]
+
+
+def test_openai_client_has_no_hidden_retries_and_a_timeout(monkeypatch):
+    client = MagicMock()
+    monkeypatch.setattr(rag, "_workspace", lambda: client)
+    rag._openai_client.cache_clear()
+    try:
+        rag._openai_client()
+    finally:
+        rag._openai_client.cache_clear()
+    factory = client.serving_endpoints.get_open_ai_client
+    factory.return_value.with_options.assert_called_once_with(
+        max_retries=0, timeout=rag.LLM_TIMEOUT_SECONDS
+    )

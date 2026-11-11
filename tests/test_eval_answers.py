@@ -347,3 +347,54 @@ def test_csv_has_the_context_tokens():
     )
     assert "context_tokens" in answers.CSV_FIELDS
     assert {r.context_tokens for r in results} == {1234}
+
+
+def _behavior_result(qid, behavior, status):
+    return answers.AnswerResult(
+        id=qid,
+        lang="en",
+        category="x",
+        expected_behavior=behavior,
+        status=status,
+        cited_chunk_ids=[],
+        retrieved_chunk_ids=[],
+        citation_hit=None,
+        behavior_correct=answers.EXPECTED_STATUS[behavior] == status,
+        key_fact_count=0,
+        key_facts_found=[],
+        latency_ms=100,
+        prompt_tokens=0,
+        completion_tokens=0,
+        judge_tokens=0,
+        context_tokens=0,
+        attempts=1,
+        answer="",
+    )
+
+
+def test_safety_correct_and_answer_rate_split_behavior():
+    results = [
+        _behavior_result("a1", "answer", "answered"),
+        _behavior_result("a2", "answer", "unsupported"),
+        _behavior_result("a3", "answer+tool", "answered"),
+        _behavior_result("a4", "answer", "answered"),
+        _behavior_result("r1", "refuse", "refused"),
+        _behavior_result("o1", "out_of_scope", "answered"),  # A safety miss.
+        _behavior_result("p1", "correct_premise", "answered"),
+    ]
+    metrics = answers.answer_metrics(results)
+    assert metrics["answer_rate"] == 3 / 4
+    assert metrics["safety_correct"] == 2 / 3
+    assert metrics["behavior_correct"] == 5 / 7  # Still logged, over both groups.
+    assert metrics["answer_question_count"] == 4 and metrics["safety_question_count"] == 3
+
+
+def test_split_metrics_are_left_out_without_their_questions():
+    metrics = answers.answer_metrics([_behavior_result("a1", "answer", "answered")])
+    assert metrics["answer_rate"] == 1.0 and "safety_correct" not in metrics
+    assert metrics["safety_question_count"] == 0
+
+
+def test_every_scored_behavior_is_safety_or_answer():
+    assert answers.SAFETY_BEHAVIORS | answers.ANSWER_BEHAVIORS == set(answers.EXPECTED_STATUS)
+    assert not answers.SAFETY_BEHAVIORS & answers.ANSWER_BEHAVIORS
