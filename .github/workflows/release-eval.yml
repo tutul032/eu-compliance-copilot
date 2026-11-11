@@ -2,10 +2,11 @@ name: release-eval
 
 # Release evaluation of staging (or prod) as the CI/CD service principal (sp-eucc-cicd): deploy
 # the bundle, then run eval_agent on the target's index with the release gates: no tool questions,
-# no energy data tool, reasoning effort medium only, one warmup call, and thresholds on behavior,
-# citation hit, key facts (hard minimum 0.75) and errors. A missed threshold fails the job run and
-# this workflow; a p95 above 10 s or key facts below 0.80 only warn. The RELEASE_EVAL line, the
-# warnings and the run URL go to the job summary.
+# no energy data tool, reasoning effort medium only, one warmup call, and thresholds on safety
+# (1.0), answer rate (0.95), citation hit, key facts (hard minimum 0.75) and errors (ADR-0007).
+# A missed threshold fails the job run and this workflow; a p95 above 10 s or key facts below 0.80
+# only warn. The RELEASE_EVAL line, the RELEASE_EVAL_MISS lines (questions with the wrong
+# behavior), the warnings and the run URL go to the job summary.
 # Runbook: docs/runbook.md, "Release evaluation".
 on:
   workflow_dispatch:
@@ -42,10 +43,10 @@ jobs:
       # Job parameters of eval_agent (bundle run --params: comma-separated key=value pairs), but
       # min_citation_hit, which comes from the input (added in the Run eval_agent step).
       EVAL_PARAMS: >-
-        exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_behavior=1.0,min_key_facts=0.75,max_errors=0
+        exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_safety=1.0,min_answer_rate=0.95,min_key_facts=0.75,max_errors=0
     steps:
       # Before anything is deployed. A number in [0, 1] only: the value goes into the
-      # comma-separated --params, where "0.85,min_behavior=0" would override another gate.
+      # comma-separated --params, where "0.85,min_safety=0" would override another gate.
       - name: Check inputs
         run: |
           if ! [[ "$MIN_CITATION_HIT" =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]]; then
@@ -73,7 +74,7 @@ jobs:
           run_url=$(grep -m1 'Run URL' eval.log | grep -oE 'https://[^ ]+')
           echo "$run_url" > run_url.txt
           missing=false
-          grep -q 'RELEASE_EVAL behavior=' eval.log || missing=true
+          grep -q 'RELEASE_EVAL safety=' eval.log || missing=true
           if [ "$status" -ne 0 ] && ! grep -q 'RELEASE_EVAL FAILED' eval.log; then missing=true; fi
           if [ "$missing" = true ] && [ -n "$run_url" ]; then
             run_id=$(echo "$run_url" | grep -oE 'runs?/[0-9]+' | grep -oE '[0-9]+')
@@ -90,9 +91,9 @@ jobs:
         if: always()
         run: |
           touch eval.log run_url.txt
-          release=$(grep -oE 'RELEASE_EVAL behavior=.*' eval.log | tail -n 1 || true)
+          release=$(grep -oE 'RELEASE_EVAL safety=.*' eval.log | tail -n 1 || true)
           # Unique lines: the failure is in the task's stdout and in its error.
-          notes=$(grep -oE 'WARNING .*|RELEASE_EVAL FAILED:.*' eval.log | awk '!seen[$0]++' || true)
+          notes=$(grep -oE 'RELEASE_EVAL_MISS .*|WARNING .*|RELEASE_EVAL FAILED:.*' eval.log | awk '!seen[$0]++' || true)
           run_url=$(cat run_url.txt)
           {
             echo "## Release evaluation: $TARGET"

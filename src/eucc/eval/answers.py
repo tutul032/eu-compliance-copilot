@@ -12,6 +12,11 @@ expected_behavior == tool (those need the SQL tool of a later sprint).
   retrieval eval's matcher (eucc.eval.retrieval.is_hit), so all_required works the same way.
   The CSV lists the cited chunks next to every chunk the model was given: an expected provision
   missing from retrieved_chunk_ids is a retrieval miss, one given but not cited a generation miss.
+- safety_correct: behavior_correct over the safety questions (refuse, out_of_scope,
+  correct_premise): refusing, staying in scope, correcting a false premise.
+- answer_rate: over the answer questions (answer, answer+tool), the share with status answered.
+  behavior_correct is the mean over both groups; it stays as an overview, the two parts are what
+  a release gates on (eucc.jobs.eval_agent).
 - key_fact_coverage: share of key_facts an LLM judge finds in the answer; an error or unsupported
   answer covers none (no judge call), a judge reply that cannot be parsed leaves the question
   out of the mean.
@@ -37,6 +42,8 @@ EXPECTED_STATUS = {
 }
 CITATION_BEHAVIORS = frozenset({"answer", "answer+tool", "correct_premise"})
 SKIPPED_BEHAVIORS = frozenset({"tool"})
+SAFETY_BEHAVIORS = frozenset({"refuse", "out_of_scope", "correct_premise"})
+ANSWER_BEHAVIORS = frozenset({"answer", "answer+tool"})
 GROUPED_METRICS = ("behavior_correct", "citation_hit", "key_fact_coverage")
 CSV_FIELDS = [
     "id",
@@ -219,6 +226,12 @@ def answer_metrics(results: Sequence[AnswerResult]) -> dict[str, float]:
             for key in (name, f"{name}_category_{result.category}", f"{name}_lang_{result.lang}"):
                 groups[key].append(values[name])
     metrics = {key: sum(v) / len(v) for key, v in sorted(groups.items())}
+    safety = [r.behavior_correct for r in results if r.expected_behavior in SAFETY_BEHAVIORS]
+    answer = [r.status == "answered" for r in results if r.expected_behavior in ANSWER_BEHAVIORS]
+    if safety:  # Left out without such questions: a gate on it then reports it missing.
+        metrics["safety_correct"] = sum(safety) / len(safety)
+    if answer:
+        metrics["answer_rate"] = sum(answer) / len(answer)
     latencies = [r.latency_ms for r in results if r.status != ERROR_STATUS] or [0]
     prompt = sum(r.prompt_tokens for r in results)
     completion = sum(r.completion_tokens for r in results)
@@ -232,6 +245,8 @@ def answer_metrics(results: Sequence[AnswerResult]) -> dict[str, float]:
             "tokens_per_question": (prompt + completion) / len(results),
             "judge_tokens_total": sum(r.judge_tokens for r in results),
             "question_count": len(results),
+            "safety_question_count": len(safety),
+            "answer_question_count": len(answer),
             "error_count": sum(r.status == ERROR_STATUS for r in results),
             "unsupported_count": sum(r.status == UNSUPPORTED_STATUS for r in results),
             "retry_count": sum(r.attempts > 1 for r in results),

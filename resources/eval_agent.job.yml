@@ -8,7 +8,7 @@
 #
 # The job parameters below default to that full eval. The release evaluation
 # (.github/workflows/release-eval.yml, docs/runbook.md) overrides them with
-# `--params exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_behavior=1.0,...`:
+# `--params exclude_category=tool,data_tool=false,variants=medium,warmup=true,min_safety=1.0,...`:
 # no energy data (no warehouse grant needed), and a missed threshold fails the run. An empty
 # threshold is no gate. Lists (exclude_category, variants) take spaces, since --params splits on
 # commas.
@@ -28,7 +28,9 @@ resources:
           default: medium
         - name: warmup
           default: "false"
-        - name: min_behavior
+        - name: min_safety
+          default: ""
+        - name: min_answer_rate
           default: ""
         - name: min_citation_hit
           default: ""
@@ -78,8 +80,10 @@ resources:
               - "{{job.parameters.variants}}"
               - --warmup
               - "{{job.parameters.warmup}}"
-              - --min-behavior
-              - "{{job.parameters.min_behavior}}"
+              - --min-safety
+              - "{{job.parameters.min_safety}}"
+              - --min-answer-rate
+              - "{{job.parameters.min_answer_rate}}"
               - --min-citation-hit
               - "{{job.parameters.min_citation_hit}}"
               - --min-key-facts

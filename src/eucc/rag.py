@@ -14,6 +14,11 @@ MAX_SOURCES sources and CONTEXT_WORD_BUDGET words in all.
 Guardrails: max_tokens, one retry when the reply is not the JSON object, and "unsupported" for an
 answer without a valid citation (eucc.rag.answer).
 
+Every model call (the answer here; the agent's router and SQL writer and the eval's judge, which
+all call chat()) retries transient errors (HTTP 429, 5xx, timeouts, connection errors) up to
+LLM_MAX_RETRIES times with exponential backoff and full jitter, honouring Retry-After, and logs
+each retry. The OpenAI client's own retries are off, so this is the only retry policy.
+
 Only databricks-sdk talks to Databricks (vector search query and the endpoint's OpenAI client), so
 the same code runs locally with a CLI profile and in jobs with the job identity. The pure helpers
 (regulation detection, merge, source assembly, response parsing, citation mapping) need no
@@ -22,14 +27,18 @@ network.
 
 import functools
 import json
+import logging
+import random
 import re
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 import mlflow
+import openai
 
 from eucc.chunk import OVERLAP_WORDS
 from eucc.index import INDEX_TABLE, full_name
@@ -57,6 +66,14 @@ MAX_TOKENS = 1500  # Reasoning and answer.
 REASONING_EFFORTS = ("low", "medium")
 DEFAULT_REASONING_EFFORT = "medium"
 RETRY_PROMPT = "Return only the JSON object."
+# Transient endpoint errors: retries after the first attempt, so at most 4 calls. Delays are
+# full jitter on 1, 2, 4 s (capped at LLM_RETRY_MAX_DELAY); a Retry-After header raises the delay.
+LLM_MAX_RETRIES = 3
+LLM_RETRY_BASE_DELAY = 1.0
+LLM_RETRY_MAX_DELAY = 30.0
+# Per request. The OpenAI default (600 s) would hold a hung call for 10 minutes; answers take
+# 5-30 s, so 120 s only cuts off calls that would not come back.
+LLM_TIMEOUT_SECONDS = 120.0
 CHUNK_COLUMNS = [
     "chunk_id",
     "reg",
@@ -666,9 +683,80 @@ def _usage(usage: Any) -> dict[str, int]:
     return {field: int(getattr(usage, field, 0) or 0) for field in fields}
 
 
+logger = logging.getLogger(__name__)
+# Injectable for tests (no real waiting, deterministic jitter).
+_sleep: Callable[[float], None] = time.sleep
+_jitter: Callable[[float, float], float] = random.uniform
+
+
 @functools.cache
 def _openai_client() -> Any:
-    return _workspace().serving_endpoints.get_open_ai_client()
+    # with_options instead of get_open_ai_client(max_retries=...): works with SDK versions whose
+    # get_open_ai_client takes no arguments (the serverless environment brings its own SDK).
+    return (
+        _workspace()
+        .serving_endpoints.get_open_ai_client()
+        .with_options(max_retries=0, timeout=LLM_TIMEOUT_SECONDS)
+    )
+
+
+def is_transient(error: BaseException) -> bool:
+    """429, 5xx, timeouts and connection errors (resets included): worth another try."""
+    if isinstance(error, openai.APIStatusError):
+        return error.status_code == 429 or error.status_code >= 500
+    return isinstance(
+        error,
+        (
+            openai.APIConnectionError,  # Includes openai.APITimeoutError.
+            httpx.TimeoutException,
+            httpx.NetworkError,  # ConnectError, ReadError (connection reset), ...
+            TimeoutError,
+            ConnectionError,  # ConnectionResetError, ConnectionRefusedError, ...
+        ),
+    )
+
+
+def _retry_after(error: BaseException) -> float | None:
+    response = getattr(error, "response", None)
+    value = getattr(response, "headers", {}).get("retry-after") if response is not None else None
+    try:
+        return float(value) if value is not None else None
+    except ValueError:  # An HTTP date: rare; the backoff applies.
+        return None
+
+
+def retry_delay(retry: int, error: BaseException | None = None) -> float:
+    """Seconds before retry number retry (1-based): full jitter, at least Retry-After."""
+    ceiling = min(LLM_RETRY_MAX_DELAY, LLM_RETRY_BASE_DELAY * 2 ** (retry - 1))
+    delay = _jitter(0.0, ceiling)
+    after = _retry_after(error) if error is not None else None
+    return min(LLM_RETRY_MAX_DELAY, max(delay, after)) if after is not None else delay
+
+
+def _short(error: BaseException) -> str:
+    text = " ".join(str(error).split())
+    return f"{type(error).__name__}: {text[:150]}"
+
+
+def call_with_retries[T](call: Callable[[], T], what: str = "LLM call") -> T:
+    """call(), retried on transient errors (is_transient) up to LLM_MAX_RETRIES times."""
+    for retry in range(1, LLM_MAX_RETRIES + 2):
+        try:
+            return call()
+        except Exception as error:
+            if retry > LLM_MAX_RETRIES or not is_transient(error):
+                raise
+            delay = retry_delay(retry, error)
+            logger.warning(
+                "%s: retry %d/%d in %.1f s after %s",
+                what,
+                retry,
+                LLM_MAX_RETRIES,
+                delay,
+                _short(error),
+            )
+            _sleep(delay)
+    raise AssertionError("unreachable")
 
 
 def chat(
@@ -681,14 +769,17 @@ def chat(
 
     reasoning_effort goes to gpt-oss as the OpenAI parameter of that name (checked against the
     endpoint: low spends fewer completion tokens than medium; an unknown value is a 400).
-    max_tokens covers reasoning and answer.
+    max_tokens covers reasoning and answer. Transient errors are retried (call_with_retries).
     """
-    response = _openai_client().chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=TEMPERATURE,
-        max_tokens=MAX_TOKENS,
-        reasoning_effort=reasoning_effort,
+    response = call_with_retries(
+        lambda: _openai_client().chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS,
+            reasoning_effort=reasoning_effort,
+        ),
+        what=f"{model} chat",
     )
     return extract_text(response.choices[0].message.content), _usage(response.usage)
 
