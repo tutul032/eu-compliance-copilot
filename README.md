@@ -1,6 +1,6 @@
 # EU Compliance Copilot
 
-Bilingual (EN/DE) assistant for **GDPR, the EU AI Act (as amended by the Digital Omnibus 2026/1744) and DORA** — answers with article-level citations from the official texts, and combines them with a company's operational data. Built on Databricks with production practices: infrastructure as code, least-privilege identities, CI/CD, and an evaluation gate.
+Bilingual (EN/DE) assistant for **GDPR, the EU AI Act (as amended by the Digital Omnibus 2026/1744) and DORA** — answers with article-level citations from the official texts, and combines them with a company's operational data. Built on Databricks with production practices: infrastructure as code, least-privilege identities, CI/CD, and an evaluation gate — plus an **Azure comparison backend** (Azure AI Search + Azure OpenAI) evaluated on the same question set.
 
 ![App screenshot](docs/tutorial/img/step5/02-app-deployed.png)
 
@@ -48,6 +48,20 @@ flowchart LR
 
 Variance across repeated release runs of the same system: citation hit 0.879–0.909, key facts 0.778–0.880, behavior 0.972–1.000. The release gate therefore checks **safety strictly** (refusals, out-of-scope, false premises = 1.0) and **quality with a margin** (answer rate ≥ 0.95, citation hit ≥ 0.85, key facts ≥ 0.75, errors = 0).
 
+## Azure comparison
+
+The same chunks, prompts, JSON contract and guardrails behind a common backend interface — only the search engine and the answer model change (ADR-0008). Evaluated Nov 2026 on the same 36 questions from a laptop; Azure resources deleted afterwards, results frozen in `eval/results/`.
+
+| Metric | Databricks (Vector Search + gpt-oss-120b) | Azure (AI Search + gpt-4.1-mini) |
+|---|---|---|
+| Safety | 1.000 | 1.000 |
+| Answer rate | 1.000 | 0.969 |
+| Citation hit | 0.909 | 0.909 |
+| Key facts | 0.852 | 0.819 |
+| p95 latency | 11.6 s | 6.1 s |
+
+Equal retrieval quality and safety; Azure about 2× faster. The one Azure miss is a search configuration issue (standard analyzer without stemming), explained in [docs/azure-comparison.md](docs/azure-comparison.md). Total Azure cost: < €0.01.
+
 ## Engineering
 
 | Area | How |
@@ -60,16 +74,18 @@ Variance across repeated release runs of the same system: citation hit 0.879–0
 | Infrastructure | Terraform: schemas, volumes, service principals, least-privilege grants (non-authoritative on shared securables) |
 | Delivery | Databricks Asset Bundles; GitHub Actions: tests, bundle validation as the CI identity, corpus refresh and release evaluation on staging — no laptop deploys to staging/prod |
 | App | Databricks App running as its own service principal; wheel installed from a UC volume |
+| Azure | Backend interface; Azure AI Search Free (hybrid BM25 + HNSW, storage-optimized vectors), Azure OpenAI via Entra ID, budget alerts, teardown after evaluation; CI independent of Azure |
 
 ## Reproduce
 
-Step-by-step tutorials with real outputs and troubleshooting: [`docs/tutorial/`](docs/tutorial/) (00 foundation → 07 release). Decisions: [`docs/adr/`](docs/adr/). Operations: [`docs/runbook.md`](docs/runbook.md). Model card and risk log: [`docs/model-card.md`](docs/model-card.md).
+Step-by-step tutorials with real outputs and troubleshooting: [`docs/tutorial/`](docs/tutorial/) (00 foundation → 07 release → 08–09 Azure comparison). Decisions: [`docs/adr/`](docs/adr/). Operations: [`docs/runbook.md`](docs/runbook.md). Model card and risk log: [`docs/model-card.md`](docs/model-card.md). Azure results: [`docs/azure-comparison.md`](docs/azure-comparison.md).
 
 ## Limitations and next steps
 
 - Scope: GDPR, AI Act, DORA only — no national law, delegated acts or case law.
 - Known weak spots are listed in the risk log (e.g. credit-scoring obligations, conditions in high-risk classification).
-- Next: port retrieval and generation to Azure AI Search + Azure OpenAI and compare on the same evaluation; MCP server for the tools; per-PR evaluation gate.
+- Azure backend is a comparison, not a deployment; Databricks is the only live system.
+- Next: language analyzers for Azure AI Search, evaluation gate on every PR, MCP server for the agent tools.
 
 ## Licence
 
