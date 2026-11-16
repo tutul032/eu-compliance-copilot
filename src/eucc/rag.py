@@ -23,6 +23,11 @@ Only databricks-sdk talks to Databricks (vector search query and the endpoint's 
 the same code runs locally with a CLI profile and in jobs with the job identity. The pure helpers
 (regulation detection, merge, source assembly, response parsing, citation mapping) need no
 network.
+
+Backends (eucc.backends): retrieve, expand, generate and answer take an optional backend that
+searches and completes instead of Databricks (e.g. Azure AI Search + Azure OpenAI). Without one
+they run the Databricks code as before. The prompts, context building, citation check and
+guardrails here are the same for every backend.
 """
 
 import functools
@@ -41,7 +46,6 @@ import mlflow
 import openai
 
 from eucc.chunk import OVERLAP_WORDS
-from eucc.index import INDEX_TABLE, full_name
 from eucc.parse import anchored_url
 
 DEFAULT_CATALOG = "workspace"
@@ -355,6 +359,15 @@ def _query(index_name: str, question: str, filters: dict[str, Any], k: int) -> l
     return parse_chunks(response.as_dict())
 
 
+def _backend(backend: Any, catalog: str, schema: str, index: str | None) -> Any:
+    """The given backend, else Databricks on catalog.schema (or index): today's behaviour."""
+    if backend is not None:
+        return backend
+    from eucc.backends.databricks import DatabricksBackend  # Imports rag: not at module level.
+
+    return DatabricksBackend(catalog=catalog, schema=schema, index=index)
+
+
 @mlflow.trace(span_type="RETRIEVER")
 def retrieve(
     question: str,
@@ -363,19 +376,21 @@ def retrieve(
     catalog: str = DEFAULT_CATALOG,
     schema: str = DEFAULT_SCHEMA,
     index: str | None = None,
+    backend: Any = None,
 ) -> list[Chunk]:
     """Top 10 articles/annexes in the question's language; per-regulation top 5 if 2+ are named.
 
-    index (a full name) overrides catalog.schema.chunks_idx.
+    index (a full name) overrides catalog.schema.chunks_idx. backend (eucc.backends.base.Backend)
+    searches instead of Databricks; the queries, filters and merge are the same.
     """
-    index_name = index or full_name(catalog, schema, INDEX_TABLE)
-    filters: dict[str, Any] = {"lang": lang, "unit_type": UNIT_TYPES}
-    chunks = _query(index_name, question, filters, NUM_RESULTS)
+    search = _backend(backend, catalog, schema, index)
+    unit_types = tuple(UNIT_TYPES)
+    chunks = search.retrieve(question, lang, unit_types=unit_types, k=NUM_RESULTS)
     regulations = detect_regulations(question)
     if len(regulations) < 2:
         return chunks
     per_regulation = [
-        _query(index_name, question, {**filters, "reg": reg}, PER_REGULATION_RESULTS)
+        search.retrieve(question, lang, [reg], unit_types, PER_REGULATION_RESULTS)
         for reg in regulations
     ]
     return merge([chunks, *per_regulation], regulations, MULTI_REGULATION_KEEP)
@@ -603,13 +618,15 @@ def expand(
     catalog: str = DEFAULT_CATALOG,
     schema: str = DEFAULT_SCHEMA,
     index: str | None = None,
+    backend: Any = None,
 ) -> list[Source]:
     """Fetch every chunk of the top 3 articles (one filtered query each, in parallel)."""
-    index_name = index or full_name(catalog, schema, INDEX_TABLE)
+    search = _backend(backend, catalog, schema, index)
     keys = top_articles(chunks)
 
     def fetch(key: ArticleKey) -> list[Chunk]:
-        return _query(index_name, question, _article_filters(key), ARTICLE_FETCH_RESULTS)
+        reg, lang, article = key
+        return search.fetch_article(reg, lang, article, query=question)
 
     with ThreadPoolExecutor(max_workers=max(len(keys), 1)) as pool:
         fetched = list(pool.map(fetch, keys))
@@ -794,12 +811,28 @@ def generate(
     lang: str,
     sources: Sequence[Source],
     reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+    backend: Any = None,
 ) -> dict[str, Any]:
     """The model's status and answer; one retry with RETRY_PROMPT if the reply is not the JSON.
 
-    context_tokens: the prompt tokens of the first call, i.e. the size of the context.
+    context_tokens: the prompt tokens of the first call, i.e. the size of the context. backend:
+    its chat answers instead of gpt-oss; the messages are the same.
     """
-    return generate_from_messages(build_messages(question, lang, sources), reasoning_effort)
+    messages = build_messages(question, lang, sources)
+    return generate_from_messages(messages, reasoning_effort, backend_chat(backend))
+
+
+def backend_chat(backend: Any) -> Callable[..., tuple[str, dict[str, int]]] | None:
+    """backend.chat as a chat function (messages, reasoning_effort); None: rag.chat."""
+    if backend is None:
+        return None
+
+    def complete(
+        messages: list[dict[str, str]], reasoning_effort: str = DEFAULT_REASONING_EFFORT
+    ) -> tuple[str, dict[str, int]]:
+        return backend.chat(messages, json=True, reasoning_effort=reasoning_effort)
+
+    return complete
 
 
 def generate_from_messages(
@@ -901,21 +934,24 @@ def answer(
     catalog: str = DEFAULT_CATALOG,
     schema: str = DEFAULT_SCHEMA,
     reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+    backend: Any = None,
 ) -> dict[str, Any]:
     """Retrieve, expand, generate, check citations.
 
     Grounding guardrail: an "answered" reply without a single valid citation is not shown; the
     status becomes "unsupported" and the answer says so (in the question's language) and lists
-    the sources the model was given.
+    the sources the model was given. backend (eucc.backends.base.Backend) searches and answers
+    instead of Databricks; everything else is the same.
     """
     if reasoning_effort not in REASONING_EFFORTS:
         raise ValueError(f"reasoning_effort must be one of {REASONING_EFFORTS}")
     start = time.perf_counter()
     lang = detect_language(question)
-    chunks = retrieve(question, lang, catalog=catalog, schema=schema)
+    where = {"catalog": catalog, "schema": schema, "backend": backend}
+    chunks = retrieve(question, lang, **where)
     regulations = detect_regulations(question)
-    sources = expand(question, chunks, regulations, catalog=catalog, schema=schema)
-    generated = generate(question, lang, sources, reasoning_effort)
+    sources = expand(question, chunks, regulations, **where)
+    generated = generate(question, lang, sources, reasoning_effort, backend)
     status, answer_text = generated["status"], generated["answer"]
     citations: list[dict[str, Any]] = []
     invalid: list[int] = []

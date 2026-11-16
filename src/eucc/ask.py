@@ -3,6 +3,11 @@
     python -m eucc.ask "How quickly must a breach be notified?" [--schema compliance_dev] [-p free]
         [--reasoning-effort low|medium] [--experiment /Users/me/eucc_traces]
     python -m eucc.ask --agent "What was the average DE-LU day-ahead price yesterday?" -p free
+    python -m eucc.ask --backend azure "How quickly must a breach be notified?"
+
+--backend azure searches Azure AI Search and answers with Azure OpenAI (eucc.backends.azure; the
+azure extra and its environment); the default is Databricks. With --agent and --backend azure the
+SQL tool still runs on the Databricks warehouse, with SQL written by the Azure model.
 
 Prints the status, the answer and the cited provisions with their EUR-Lex links. With --agent the
 question goes through eucc.agent (router, regulation search and/or the energy SQL tool), and the
@@ -18,6 +23,7 @@ from typing import Any
 # mlflow (imported by eucc.rag) logs a hint for coding agents on import; not useful on a CLI.
 os.environ.setdefault("MLFLOW_DISABLE_AGENT_HINT", "1")
 
+from eucc.backends.base import BACKENDS, make_backend  # noqa: E402
 from eucc.rag import (  # noqa: E402
     DEFAULT_CATALOG,
     DEFAULT_REASONING_EFFORT,
@@ -99,6 +105,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--agent", action="store_true", help="route through the agent (regulations + energy data)"
     )
+    parser.add_argument("--backend", choices=BACKENDS, default="databricks")
     parser.add_argument("--catalog", default=DEFAULT_CATALOG)
     parser.add_argument("--schema", default=DEFAULT_SCHEMA)
     parser.add_argument("-p", "--profile", help="Databricks CLI profile (e.g. free)")
@@ -122,6 +129,8 @@ def main(argv: list[str] | None = None) -> None:
         mlflow.tracing.disable()
     if hasattr(sys.stdout, "reconfigure"):  # Umlauts on a Windows console.
         sys.stdout.reconfigure(encoding="utf-8")
+    # None for Databricks: rag and agent then take the default path, exactly as before.
+    backend = make_backend(args.backend) if args.backend != "databricks" else None
     if args.agent:
         from eucc import agent
 
@@ -130,6 +139,7 @@ def main(argv: list[str] | None = None) -> None:
             catalog=args.catalog,
             schema=args.schema,
             reasoning_effort=args.reasoning_effort,
+            backend=backend,
         )
         print(format_agent_result(result))
         return
@@ -138,6 +148,7 @@ def main(argv: list[str] | None = None) -> None:
         catalog=args.catalog,
         schema=args.schema,
         reasoning_effort=args.reasoning_effort,
+        backend=backend,
     )
     print(format_result(result))
 

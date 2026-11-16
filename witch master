@@ -1,0 +1,5 @@
+[33ma065a0f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mazure/backend-eval[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmaster[m[33m)[m feat(azure): AI Search index from gold_chunks (storage-optimized vectors, client-side query embedding, embedding cache); tutorial 08 (#40)
+[33m63db4a9[m[33m ([m[1;33mtag: [m[1;33mv1.0.0[m[33m)[m docs: README, model card and risk log, tutorial 07; changelog 1.0.0 (#39)
+[33mb602baf[m fix(ci): split release gate into safety and answer rate; retry transient LLM errors; miss lines (#38)
+[33mbe131f9[m fix(ci): release gate fails the task on missed thresholds; single eval per run (#37)
+[33m0c28dc8[m ci: release-eval workflow with quality thresholds on staging (#36)
