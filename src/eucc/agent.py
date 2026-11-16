@@ -188,18 +188,28 @@ def default_deps(
     model: str = rag.MODEL,
     warehouse: str | None = None,
     use_data_tool: bool = True,
+    backend: Any = None,
 ) -> AgentDeps:
     """The real tools: chunks_idx in catalog.schema, gpt-oss, the energy SQL warehouse.
 
     index (a full name), model (a chat serving endpoint) and warehouse (an id) override the
     defaults; the app sets them from its resources. The SQL tool writes its SQL with the same
-    model.
+    model. backend (eucc.backends.base.Backend) searches and chats instead (index and model are
+    then unused); the energy data stays on the Databricks warehouse.
     """
     energy_catalog = sql_tool.load_catalog()
-    chat: ChatFn = rag.chat if model == rag.MODEL else functools.partial(rag.chat, model=model)
+    where: dict[str, Any] = {"catalog": catalog, "schema": schema, "index": index}
+    chat: ChatFn
+    if backend is not None:
+        chat = rag.backend_chat(backend)
+        where["backend"] = backend
+    elif model == rag.MODEL:
+        chat = rag.chat
+    else:
+        chat = functools.partial(rag.chat, model=model)
     return AgentDeps(
         chat=chat,
-        search=functools.partial(search_regulation, catalog=catalog, schema=schema, index=index),
+        search=functools.partial(search_regulation, **where),
         query=functools.partial(
             sql_tool.query,
             catalog=energy_catalog,
@@ -248,14 +258,17 @@ def search_regulation(
     catalog: str = rag.DEFAULT_CATALOG,
     schema: str = rag.DEFAULT_SCHEMA,
     index: str | None = None,
+    backend: Any = None,
 ) -> list[rag.Source]:
     """Retrieve with the question and with regulation_query, interleave, expand (small-to-big).
 
     Both queries filter on the question's language. The regulations named in either query get
     a reserved source each (rag.assemble_sources). index (a full name) overrides
-    catalog.schema.chunks_idx.
+    catalog.schema.chunks_idx; backend searches instead of Databricks.
     """
-    where = {"catalog": catalog, "schema": schema, "index": index}
+    where: dict[str, Any] = {"catalog": catalog, "schema": schema, "index": index}
+    if backend is not None:  # Without one, the Databricks call exactly as before.
+        where["backend"] = backend
     queries = search_queries(question, regulation_query)
     rankings = [rag.retrieve(q, lang, **where) for q in queries]
     chunks = rankings[0] if len(rankings) == 1 else interleave(rankings, SEARCH_KEEP)
@@ -535,10 +548,12 @@ def run(
     reasoning_effort: str = rag.DEFAULT_REASONING_EFFORT,
     deps: AgentDeps | None = None,
     use_data_tool: bool = True,
+    backend: Any = None,
 ) -> dict[str, Any]:
     """The agent's answer to one question, as a dict compatible with eucc.rag.answer's result.
 
-    use_data_tool=False turns the energy data tool off, also for injected deps.
+    use_data_tool=False turns the energy data tool off, also for injected deps. backend
+    (eucc.backends.base.Backend) is used when deps is None; prompts and checks are the same.
     """
     if reasoning_effort not in rag.REASONING_EFFORTS:
         raise ValueError(f"reasoning_effort must be one of {rag.REASONING_EFFORTS}")
@@ -549,6 +564,7 @@ def run(
             schema=schema,
             reasoning_effort=reasoning_effort,
             use_data_tool=use_data_tool,
+            backend=backend,
         )
     elif not use_data_tool:
         deps = dataclasses.replace(deps, use_data_tool=False)

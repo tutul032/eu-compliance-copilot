@@ -262,6 +262,7 @@ def evaluate_question(
         answer_result=scored,
         latency_ms=int(result.get("latency_ms") or 0),
         answer=result["answer"],
+        retrieved_chunk_ids=list(result.get("retrieved_chunk_ids") or []),
     )
 
 

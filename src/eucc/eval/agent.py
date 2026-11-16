@@ -19,7 +19,7 @@ import csv
 import json
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +88,8 @@ class AgentResult:
     answer_result: AnswerResult | None  # The eval_rag scores; None for tool-only questions.
     latency_ms: int
     answer: str
+    # Every chunk passed to the answer model, in source order (also for tool-only questions).
+    retrieved_chunk_ids: list[str] = field(default_factory=list)
 
 
 def expected_route(question: Question) -> str:
@@ -203,9 +205,15 @@ def _numbers_text(values: Iterable[float]) -> str:
     return " ".join(f"{v:g}" for v in values)
 
 
-def write_csv(results: Iterable[AgentResult], path: Path) -> None:
+def write_csv(
+    results: Iterable[AgentResult], path: Path, fields: Sequence[str] = CSV_FIELDS
+) -> None:
+    """One row per question with the given columns (default CSV_FIELDS, the release eval's).
+
+    Columns available beyond CSV_FIELDS: retrieved_chunk_ids.
+    """
     with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        writer = csv.DictWriter(f, fieldnames=list(fields), extrasaction="ignore")
         writer.writeheader()
         for r in results:
             scored = r.answer_result
@@ -234,6 +242,7 @@ def write_csv(results: Iterable[AgentResult], path: Path) -> None:
                     "data_correct": "" if r.data_correct is None else r.data_correct,
                     "data_error": r.data_error or "",
                     "cited_chunk_ids": " ".join(scored.cited_chunk_ids) if scored else "",
+                    "retrieved_chunk_ids": " ".join(r.retrieved_chunk_ids),
                     "data_citations": " ".join(r.data_citations),
                     "citation_hit": (
                         "" if scored is None or scored.citation_hit is None else scored.citation_hit
