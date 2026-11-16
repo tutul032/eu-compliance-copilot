@@ -32,6 +32,11 @@ eval_agent_job = "eucc.jobs.eval_agent:main"
 vectorsearch = [
     "databricks-vectorsearch>=0.82",
 ]
+azure = [
+    "azure-identity>=1.27.0",
+    "azure-search-documents>=12.1.0",
+    "openai>=3.46.0",
+]
 
 [build-system]
 requires = ["hatchling"]
