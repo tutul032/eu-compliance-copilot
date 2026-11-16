@@ -3,7 +3,17 @@
 All notable changes, by GitHub release. Versions follow [semver](https://semver.org/); dates are
 release dates (UTC).
 
-## [Unreleased]
+## [1.1.0] - 2026-11-16
+
+### Added
+- Backend interface (`retrieve`, `fetch_article`, `chat`); `AzureBackend` on Azure AI Search (hybrid) + Azure OpenAI `gpt-4.1-mini` with Entra ID auth.
+- `eucc.backends.azure_index` loader (vector field `stored=false`, embedding cache), `eucc.eval.local_eval --backend`, `eucc.ask --backend`.
+- Side-by-side evaluation (`eval/results/*-2026-11-16.*`), `docs/azure-comparison.md`, ADR-0008, tutorials 08–09.
+
+### Notes
+- Azure resources deleted after evaluation; CI does not depend on Azure.
+
+## [1.0.0] - 2026-11-12
 
 ### Added
 - Corpus manifest `corpus/manifest.yaml`: 12 entries, 6 EUR-Lex sources in EN and DE (GDPR and
